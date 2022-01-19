@@ -124,7 +124,6 @@ class wave:
 				self.val = False
 			# TODO: DEBUG
 			#if self.form.N() == 2:
-			#	self.debug = [(lambda T: p2.x1p(self.span[0]), lambda T: I[0])]
 			# TODO: DEBUG
 		else: self.dim = N - 1
 		# TODO: REMOVE DEBUGS
@@ -133,8 +132,9 @@ class wave:
 			D = None if self.D[0] == None else self.D[0]
 			dp = lambda T: vsum(pC(T), D(T))
 			Cvec = lambda T: scale(self.P(T)[0], self.C(T)[0])
-			#self.debug += [(dp,Cvec)]
-			self.debug += [(pC,D)]
+			self.debug += [(dp,Cvec)]
+			#self.debug += [(pC,D)]
+			#self.debug += [(dp,self.I)]
 		# TODO: REMOVE DEBUGS
 	# Init various intersection values needed to calculate the waveform
 	def interInit(self, N, eps = EPS):
@@ -189,6 +189,7 @@ class wave:
 		F = f1 if R else f2
 		B = lambda T: reject([F], [i1v(T)])[0]
 		P = lambda T: [norm(B(T))]
+		# TODO: maybe this is what was wrong?
 		Ip = lambda T: B(T)
 		theta = 0.0
 		C2L = (	(lambda T: Ip(T), lambda T: -1.0),
@@ -199,9 +200,9 @@ class wave:
 		#dp2 = lambda T: vsum(x2p(T),d2(T))
 		#self.debug += [(x1p, d1)]
 		#self.debug += [(x2p, d2)]
-		self.debug += [(dp1, B)]
+		#self.debug += [(dp1, B)]
 		#self.debug += [(dp1, lambda T: F)]
-		self.debug += [(dp1, lambda T: P(T)[0])]
+		#self.debug += [(dp1, lambda T: P(T)[0])]
 		return P, theta, Ip, D, C2L
 
 	# Full case of two directed wavefronts
@@ -250,11 +251,8 @@ class wave:
 		# Project waves onto the intersection subspace TODO: R > D!
 		sign = lambda t, R, D: 1.0 if R(t) > magnitude(D(t)) else -1.0
 		Rp = lambda t, R, D: abs(R(t)**2.0 - magnitude(D(t))**2.0)**0.5
-		p1s = lambda t: 1.0 if d1 == None else sign(t,p1.R,d1)
-		p2s = lambda t: 1.0 if d2 == None else sign(t,p2.R,d2)
-		Ps = lambda t: p2s(t) if d1 == None else p1s(t)
-		r1p = lambda t: p1.R(t) if d1 == None else p1s(t)*Rp(t,p1.R,d1)
-		r2p = lambda t: p2.R(t) if d2 == None else p1s(t)*Rp(t,p2.R,d2)
+		r1p = lambda t: p1.R(t) if d1 == None else Rp(t,p1.R,d1)
+		r2p = lambda t: p2.R(t) if d2 == None else Rp(t,p2.R,d2)
 		# Solve the quadratic (or linear) equation for two spheres
 		I = lambda t: magnitude(self.I(t))
 		solution = []
@@ -269,24 +267,23 @@ class wave:
 			f2 = lambda t: r1p(t)**2.0 - I(t)**2.0 - r2p(t)**2.0
 			n, p = quadratic(f0, f1, f2)
 			solution = [n,p]
-		# Reject them back to the big subspace
-		Cr = lambda t, C, D: C(t) if D == None else (C(t)**2.0 + magnitude(D(t))**2.0)**0.5
-		#Cr = lambda t, C, D: C(t) if D == None else Ps(t) * (C(t)**2.0 + magnitude(D(t))**2.0)**0.5
-		sol = sorted([Cr(T, s, d1) for s in solution])
+		# We only use the smallest solution
+		sol = sorted([s(T) for s in solution])
 		return sol
 	# The current location of the wave center
 	def L(self, T):
 		d = None if self.D[0] == None else self.D[0](T)
 		C = scale(self.P(T)[0], self.C(T)[0])
 		return vsum(self.p1.center[0], vsum(d, C))
-	# The radius perpendicular to the form at time T (Just do a thingy)
+	# The radius perpendicular to the form at time T
 	def R(self, T):
-		p1, p2 = self.parents()
+		# Reject back up from the projection solution
+		D = 0.0 if self.D[0] == None else magnitude(self.D[0](T))
+		Cp = self.C(T)[0]
+		c1 = abs(D**2.0 + Cp**2.0) ** 0.5
+		# Calculate the wave radius
+		p1 = self.parents()[0]
 		r1 = p1.R(T)
-		c1 = self.C(T)[0]
-		#if self.form.N() == 2:
-		#	print("R -- C1!",r1, c1)
-		#c1 = magnitude(self.selfC(T))
 		return abs((r1 ** 2.0) - (c1 ** 2.0)) ** 0.5
 
 # Whether a time is within a span

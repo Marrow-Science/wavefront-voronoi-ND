@@ -321,6 +321,7 @@ class VoronoiVis(ShowBase):
 			per = (1.0 * i) / siz
 			pos = voronoi.vsum(place, voronoi.scale(vec,per))
 			c.setPos(pos[0],pos[1],pos[2])
+			c.setScale(1.0 + (2.0 * per))
 
 	def scale(self, handle, N, r):
 		if N == 2:
