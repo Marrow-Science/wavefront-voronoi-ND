@@ -8,6 +8,7 @@ from panda3d.core import GeomVertexFormat, GeomVertexData, GeomVertexWriter
 from panda3d.core import GeomTriangles
 from panda3d.core import Geom, GeomNode, ModelNode
 from panda3d.core import TransparencyAttrib
+from panda3d.core import Vec3, Quat
 from direct.gui.DirectGui import DirectSlider
 
 # The "default" runtime system
@@ -363,27 +364,43 @@ class VoronoiVis(ShowBase):
 			h.setPos(cX, cY, cZ)
 			# Set the rotations of the geom
 			if w.form.N() == 1:
-				look = voronoi.vsum(center, w.form.dir[0])
+				look = voronoi.vsum(center, w.P(T)[0])
 				lX, lY, lZ = look
 				# Use Look At to set a base orientation
 				h.lookAt(lX, lY, lZ)
-				h.setP(h.getP() + 90)
+				h.setP(h.getP() + 90.0)
 			# TODO: Set the R orientation for 0-waves
 			if w.form.N() == 2:
-				look = voronoi.vsum(center, w.form.dir[0])
-				lX, lY, lZ = look
-				# Use Look At to set a base heading and pitch
-				#h.lookAt(lX, lY, lZ)
-				# Set roll to be 0
-				xh, zh = voronoi.hat(3,0), voronoi.hat(3,2)
-				prj = voronoi.project([xh,zh], [w.form.X])
-				ang = voronoi.angle(xh,prj[0])
-				# Update the roll
-				h.setR(h.getR() + numpy.rad2deg(ang))
-				h.setH(0.0)
-				h.setP(0.0)
-				h.setR(0.0)
-				#print("HPR", h.getH(), h.getP(), h.getR())
+				c1, c2 = p1.center[0], p2.center[0]
+				b1 = w.P(T)[0]
+				b2 = voronoi.norm(voronoi.vec(p1.L(T),p2.L(T)))
+				b2 = voronoi.vec(c1,c2)
+				b2r = voronoi.reject([b1], [b2])[0]
+				RP = [b1,voronoi.norm(b2r)]
+				look1 = voronoi.vsum(center, RP[0])
+				look2 = voronoi.vsum(center, RP[1])
+				lX, lY, lZ = look1
+				h.lookAt(lX, lY, lZ)
+				qb = Quat()
+				qb.setHpr(h.getHpr())
+				RV = w.form.comp(3)[0]
+				print(RV)
+				q = Quat()
+				q.setFromAxisAngle(1.0, toV3(RV))
+				h.setQuat(qb + q)
+				#right = q.getRight()
+				#print(RP[0], right)
+				#ang = voronoi.angle(right, RP[1])
+				#q.setFromAxisAngleRad(ang, toV3(RP[0]))
+				#h.setQuat(q)
+				# Use Look At to set a base orientation
+				#h.setP(h.getP() + 90.0)
+				#h.setR(h.getR() + 90.0)
+				# The || plane is cen-cen and p(T)[0]
+				#aH = planeAngle(RP, 0)
+				#aP = planeAngle(RP, 1)
+				#print(aP, aH)
+				#h.setHpr(aP, aH, 0.0)
 			
 			#print(h.getHpr())
 			#if w.form.N() < 2:
@@ -392,6 +409,15 @@ class VoronoiVis(ShowBase):
 			#else:
 				#print(w.R(T))
 			#	self.scale(h,N,10.0)
+
+def toV3(basic):
+	x, y, z = basic
+	return Vec3(x,y,z)
+
+def planeAngle(plane, idx):
+	basis = [voronoi.hat(3,x) for x in range(3)][:idx+1:-1]
+	prj = voronoi.project(basis, plane)
+	return numpy.rad2deg(voronoi.angle(prj[idx], voronoi.hat(3,idx)))
 
 # The canvas goes from -4.0 to 4.0
 def canvCoords(coords, r = 0.01):
@@ -470,11 +496,12 @@ def printwave(wave):
 def safeadd(WF):
 	print("<---------WAVE---------->")
 	nw = WF.nextCollision()
-	if not nw == None and nw.form.N() != 2:
-		#nw.debug = []
+	if not nw == None and nw.form.N() == 2:
+		nw.debug = []
 		lamcen = lambda T: nw.L(T)
 		lamvec = lambda T: voronoi.scale(nw.P(T)[0], nw.C(T)[0])
-		#nw.debug.append((lamcen,lamvec))
+		nw.debug.append((lamcen,lambda T: nw.P(T)[0]))
+		nw.debug.append((lamcen,lambda T: nw.form.comp(3)[0]))
 	if nw == None:
 		print("WAVE FAIL!")
 		print(">-----------------------<")
@@ -486,16 +513,31 @@ def safeadd(WF):
 if __name__ == "__main__":
 
 
+	data = [
+	(0.0732764158707837, 0.48585568272536983, 0.5781378249494682),
+	(0.3939588778405376, 0.7757835671885716, 0.08201036150890328),
+	(0.9042783856470057, 0.6139615023676342, 0.03324267155880689),
+	(0.48039019498094027, 0.7366494230107247, 0.16819997100066375),
+	(0.7805904208855332, 0.8857318080514044, 0.5330266843849021),
+	(0.3968644499216717, 0.06525707960187233, 0.9648408682413959),
+	(0.4666398805949532, 0.7113641279878318, 0.2547308933969078)]
+	data = [[x*10,y*10,z*10] for x,y,z in data]
+	weight = [1.0, 2.0, 3.0, 4.0, 1.0, 0.5, 1.5]
+
 	#data = [[2.0,3.0,0.0],[-1.0,0.0,2.0],[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
 	#weight = [1.0, 3.0, 2.0, 2.1]
-	data = [[2.0,3.0,0.0],[-1.0,0.0,2.0],[0.0,2.0,-1.0]]
-	weight = [1.0, 3.0, 2.0]
+	#data = [[2.0,3.0,0.0],[-1.0,0.0,2.0],[0.0,2.0,-1.0]]
+	#weight = [1.0, 3.0, 2.0]
 	#data = [[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
 	#weight = [2.0, 2.0]
 
 
 	root = VoronoiVis()
 	WF = voronoi.wavefront(data, weight)
+	safeadd(WF)
+	safeadd(WF)
+	safeadd(WF)
+	safeadd(WF)
 	safeadd(WF)
 	safeadd(WF)
 	safeadd(WF)

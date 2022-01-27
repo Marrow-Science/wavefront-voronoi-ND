@@ -48,9 +48,9 @@ class form:
 		comp = []
 		i = 0
 		while len(comp) < compN and i < N:
-			nxt = reject(self.dir + comp, [hat(N,i)])[0]; i += 1
+			nxt = reject(self.dir + comp, [hat(compN,i)])[0]; i += 1
 			if magnitude(nxt) < 0.01: continue
-			comp.append(nxt)
+			comp.append(norm(nxt))
 		return comp		
 
 def interPlane(f1, f2):
@@ -126,16 +126,6 @@ class wave:
 			#if self.form.N() == 2:
 			# TODO: DEBUG
 		else: self.dim = N - 1
-		# TODO: REMOVE DEBUGS
-		if self.form.N() == 2:
-			pC = lambda T: self.p1.center[0]
-			D = None if self.D[0] == None else self.D[0]
-			dp = lambda T: vsum(pC(T), D(T))
-			Cvec = lambda T: scale(self.P(T)[0], self.C(T)[0])
-			self.debug += [(dp,Cvec)]
-			#self.debug += [(pC,D)]
-			#self.debug += [(dp,self.I)]
-		# TODO: REMOVE DEBUGS
 	# Init various intersection values needed to calculate the waveform
 	def interInit(self, N, eps = EPS):
 		p1, p2 = self.parents()
