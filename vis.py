@@ -344,14 +344,14 @@ class VoronoiVis(ShowBase):
 		#print("TIME", T)
 		# Debug vectors
 		for v,h in self.debug:
-			if not voronoi.inspan(T, v.span):
+			if not voronoi.inSpan(T, v.span):
 				h.detachNode()
 				continue
 			h.reparentTo(self.render)
 			self.vecplace(h, v.vec, T)
 		# Wave placement
 		for w,h in self.wave:
-			if not voronoi.inspan(T, w.span):
+			if not voronoi.inSpan(T, w.span):
 				h.detachNode()
 				continue
 			h.reparentTo(self.render)

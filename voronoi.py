@@ -24,18 +24,11 @@ class form:
 		if center == None:
 			print("NO CENTER!", base, center)
 			return None
-		#print("FORM INIT")
 		self.base = [center] if p == None else p[0].base + p[1].base
 		wvec = [vec(b, center) for b in self.base]
-		#print("wvec:", wvec)
 		v = None
 		for x in wvec: v = vsum(x, v)
-		# TODO: THIS SIGN IS FUCKING UP!
 		self.X = norm(v)
-		#self.X = scale(norm(v), -1.0)
-		#I = project(P, [self.X])
-		#print("I", I)
-		#print("X:", self.base, center, self.X)
 		form = I if p == None else span([I] + p[0].dir, p[1].dir)
 		self.dir = form
 		self.dim = len(self.dir)
@@ -104,7 +97,7 @@ class wave:
 		self.p1 = p1
 		self.p2 = p2
 		self.P, self.T, self.I, self.D, self.C2L = self.interInit(N)
-		self.span, self.center, self.val = timeSpan(self)
+		self.span, self.center, self.val = self.spanInit()
 		#TODO: BETTER DEBUG
 		#TODO: BETTER DEBUG
 		# TODO: split into function
@@ -122,23 +115,19 @@ class wave:
 			#print("FORM DIMS:", N, self.form.N(), self.dim)
 			if not(self.dim == p1.dim-1 or self.dim == p2.dim-1):
 				self.val = False
-			# TODO: DEBUG
-			#if self.form.N() == 2:
-			# TODO: DEBUG
 		else: self.dim = N - 1
 	# Init various intersection values needed to calculate the waveform
 	def interInit(self, N, eps = EPS):
+		# Local variable initialization
 		p1, p2 = self.parents()
 		c1, c2 = (None, None)
-		#c1 = p1.center[0] if p1.leaf() else p1.parents()[0].center[0]
-		#c2 = p2.center[0] if p2.leaf() else p2.parents()[0].center[0]
 		c1, c2 = (p1.center[0], p2.center[0])
 		f1, f2 = (p1.form, p2.form)
-		left, right = (f1.N() == 0, f2.N() == 0)
-		#self.x1p = lambda T: vsum(c1, scale(f1.X, p1.C(T)[0]))
-		#self.x2p = lambda T: vsum(c2, scale(f2.X, p2.C(T)[0]))
+		# Lambdas for caching parent wave locations
 		self.x1p = lambda T: p1.L(T)
 		self.x2p = lambda T: p2.L(T)
+		# 3 cases for wave intersection, all derive from same formula
+		left, right = (f1.N() == 0, f2.N() == 0)
 		if left and right:
 			return self.interInit0x0(c1, c2)
 		elif left or right:
@@ -147,6 +136,7 @@ class wave:
 			return self.interInitNxN(p1, p2, c1, c2, f1, f2)
 
 	# Base degenerate case of two undirected wavefronts
+	# The intersection plane is 1D and there are no D vectors
 	def interInit0x0(self, c1, c2):
 		theta = 0.0
 		Iv = lambda T: vec(c1, c2)
@@ -155,47 +145,33 @@ class wave:
 		C2L = (	(lambda T: Is(T), lambda T: -1.0),
 			(lambda T: Is(T), lambda T: 1.0))
 		D = (None, None)
-		# TODO: BETTER DEBUG
-		#self.debug = [(lambda T: c1, lambda T:vec(c1,c2))]
-		# TODO:
 		return P, theta, Iv, D, C2L
 
 	# Partial case of one directed and one undirected wavefront
+	# In this case, the intersection plane is 1D but there is one D vector
 	def interInit0xN(self, p1, p2, c1, c2, f1, f2):
-		# Cases, which one is 0?
-		L, R = (f1.N() == 0, f2.N() == 0)
-		# Xp
+		# Xp, the centers of each wave (lambdas)
 		x1p, x2p = (self.x1p, self.x2p)
-		# I
+		# I, the vector from x1 to x2
 		i1v = lambda T: vec(x1p(T),x2p(T))
 		i2v = lambda T: vec(x2p(T),x1p(T))
-		# F
-		f1, f2 = (p1.form.X, p2.form.X)
-		# D
-		d1 = None if R else lambda T: project([f2], [i1v(T)])[0]
-		d2 = None if L else lambda T: project([f1], [i2v(T)])[0]
+		# D, vector from each X to the plane of intersection
+		L, R = (f1.N() == 0, f2.N() == 0)
+		d1 = None if R else lambda T: project([f2.X], [i1v(T)])[0]
+		d2 = None if L else lambda T: project([f1.X], [i2v(T)])[0]
 		D = (d1, d2)
-		# Special Case
-		F = f1 if R else f2
+		# P, the intersection plane
+		F = f1.X if R else f2.X
 		B = lambda T: reject([F], [i1v(T)])[0]
 		P = lambda T: [norm(B(T))]
-		# TODO: maybe this is what was wrong?
 		Ip = lambda T: B(T)
 		theta = 0.0
 		C2L = (	(lambda T: Ip(T), lambda T: -1.0),
 			(lambda T: Ip(T), lambda T: 1.0))
-		self.debug = []
-		#self.debug += [(x1p, i1v)]
-		dp1 = lambda T: vsum(x1p(T),d1(T))
-		#dp2 = lambda T: vsum(x2p(T),d2(T))
-		#self.debug += [(x1p, d1)]
-		#self.debug += [(x2p, d2)]
-		#self.debug += [(dp1, B)]
-		#self.debug += [(dp1, lambda T: F)]
-		#self.debug += [(dp1, lambda T: P(T)[0])]
 		return P, theta, Ip, D, C2L
 
 	# Full case of two directed wavefronts
+	# In this case the intersection plane is 2D and there are two D vectors
 	def interInitNxN(sekf, p1, p2, c1, c2, f1, f2):
 		P = lambda T: interPlane(f1, f2)
 		x1 = lambda T: toSize(project(P, f1.X)[0], p1.C(T)[0])
@@ -218,6 +194,11 @@ class wave:
 			(lambda T: 0.0, lambda T: sin(c2t(T)) / sin(c1t(T))))
 		return P, Th, I, D, C2L
 
+	def spanInit(self):
+		time,val = timeSpan(self)
+		cen,_ = centerSpan(self, time)
+		return time, cen, val
+
 	# If this is a leaf node
 	def leaf(self): return False
 	# If the parents actually intersect at some point
@@ -229,12 +210,13 @@ class wave:
 	# The theta between centers of the two parent forms
 	def theta(self): return self.T
 	# The distance along the parent form at time T!
-	def C(self, T):
-		#if not inspan(T, self.span): return [0.0]
-		if (T + EPS) < self.span[0]:
-			return [0.0]
-		if not self.span[1] == None and (T - EPS) > self.span[1]:
-			return [magnitude(vec(self.center[0], self.center[1]))]
+	def C(self, T, clamp = True):
+		# Clamp the output if C is called outside span boundaries
+		if clamp and not inSpan(T, self.span):
+			ret,valid = clampSpan(self, T, EPS)
+			if not valid: print("Impossible situation occured")
+			return ret
+		# Calculate the form intersection
 		theta = self.theta()
 		p1, p2 = self.parents()
 		d1, d2 = self.D
@@ -246,24 +228,27 @@ class wave:
 		# Solve the quadratic (or linear) equation for two spheres
 		I = lambda t: magnitude(self.I(t))
 		solution = []
-		# TODO: NEED A WAY TO HANDLE NEGATIVE RADII
+		# Linear equation (0x0, 0xN)
 		if abs(theta) < EPS:
 			f0 = lambda t: 2.0 * I(t)
 			f1 = lambda t: r2p(t)**2.0 - I(t)**2.0 - r1p(t)**2.0
 			solution = [linear(f0,f1)]
+		# Quadratic equation (NxN)
 		else:
-			f0 = lambda t: 2.0 * (1.0 - math.cos(theta) * self.C2L[0][1](t))
-			f1 = lambda t: -2.0 * math.cos(theta) * self.C2L[0][0](t)
+			cos = lambda t: math.cos(t)
+			c2l = lambda x, t: self.C2L[0][x](t)
+			f0 = lambda t: 2.0 * (1.0 - cos(theta) * c2l[1](t))
+			f1 = lambda t: -2.0 * cos(theta) * c2l[0](t)
 			f2 = lambda t: r1p(t)**2.0 - I(t)**2.0 - r2p(t)**2.0
 			n, p = quadratic(f0, f1, f2)
 			solution = [n,p]
-		# We only use the smallest solution
+		# We only use the smallest solution TODO: possible NxN bug here
 		sol = sorted([s(T) for s in solution])
 		return sol
 	# The current location of the wave center
-	def L(self, T):
+	def L(self, T, clamp = True):
 		d = None if self.D[0] == None else self.D[0](T)
-		C = scale(self.P(T)[0], self.C(T)[0])
+		C = scale(self.P(T)[0], self.C(T, clamp)[0])
 		return vsum(self.p1.center[0], vsum(d, C))
 	# The radius perpendicular to the form at time T
 	def R(self, T):
@@ -277,33 +262,36 @@ class wave:
 		return abs((r1 ** 2.0) - (c1 ** 2.0)) ** 0.5
 
 # Whether a time is within a span
-def inspan(T, span, eps = EPS):
+def inSpan(T, span, eps = EPS):
 	return (((span[0] == None) or (T + EPS) > span[0]) and
 		((span[1] == None) or (T - EPS) < span[1]))
 
-# When r = 0 we got ourselves a start / end point!
+# Clamp a wave's C between extremes
+def clampSpan(wave, T, eps = EPS):
+	if (T + EPS) < self.span[0]:
+		return [0.0], True
+	if (T - EPS) > self.span[1]:
+		# TODO: potential bug here, need to calculate with D
+		print("Potential Bug!")
+		return [magnitude(vec(self.center[0], self.center[1]))], True
+	return None, False
+
 def timeSpan(wave, eps = EPS, bound = BOUND):
+	# Find the zeros of the wave intersection
 	time = sorted(rzero(wave))
 	time = [t for t in time if t < bound]
-	#print(time)
-	if len(time) == 0: return (None, None), (None, None), False
-	p1, p2 = wave.parents()
-	c1, c2 = (p1.center[0], p2.center[0])
-	d1, d2 = wave.D
-	# Projection onto the intersection plane
-	Rp = lambda t, R, D: abs(R(t)**2.0 - magnitude(D(t))**2.0)**0.5
-	#cen = lambda T: vsum(wave.x1p(T), toSize(wave.P(T)[0], -1.0 * p1.R(T)))
-	Pb = lambda T: c1 if d1 == None else vsum(c1, d1(T))
-	Cp = lambda T: p1.R(T) if d1 == None else Rp(T,p1.R,d1)
-	# TODO: this is the problem! P(T) does not track correctly! Need B?
-	#cen = lambda T: vsum(Pb(T), toSize(wave.P(T)[0], p1.R(T)))
-	Cv = lambda T: scale(wave.P(T)[0], Cp(T))
-	cen = lambda T: vsum(Pb(T), Cv(T))
-	#wave.debug = [(Pb,Cv)]
-	#cen = lambda T: vsum(wave.x1p(T), toSize(wave.form.X, wave.C(T)[0]))
-	#cen = lambda T: vsum(wave.x1p(T), toSize(wave.P(T)[0], wave.C(T)[0]))
-	if len(time) == 1: return (time[0], None), (cen(time[0]), None), True
-	return (time[0], time[1]), (cen(time[0]), cen(time[1])), True
+	# If the waves do not intersect
+	if len(time) == 0: return (None, None), False
+	# Return the span(s)
+	if len(time) == 1: return (time[0], None), True
+	return (time[0], time[1]), True
+
+def centerSpan(wave, time, eps = EPS, bound = BOUND):
+	if time[0] == None: return (None, None), False
+	L = lambda T: wave.L(T, clamp = False)
+	c0 = L(time[0])
+	c1 = None if time[1] == None else L(time[1])
+	return (c0, c1), True
 
 def linear(a, b, eps = EPS):
 	p = lambda T: (-1.0 * b(T)) / a(T)
@@ -322,22 +310,22 @@ def quadratic(a, b, c, eps = EPS):
 	cN = lambda T: linear(b,c)(T) if abs(a(T)) < eps else rN(T)
 	return (cN,cP)
 
+# Clip away times where the wave is not intersecting the plane of intersection
 def clipWindow(p, d, window):
 	if d == None: return window, False
 	projectionDifference = lambda T: p.R(T) - magnitude(d(T))
 	x0,x1 = window
 	head, tail = projectionDifference(x0), projectionDifference(x1)
-	print("HEAD TAIL", head, tail)
 	if head < 0.0 and tail < 0.0: return None, True
 	hasClip = head * tail < 0.0
 	sign = head < 0.0
 	window = (x0,x1)
 	if hasClip:
 		clipLocation = solve(projectionDifference, a = x0, b = x1)
-		print("CLIPLOC:", clipLocation, projectionDifference(clipLocation))
 		window = (clipLocation, x1) if sign else (x0, clipLocation)
 	return window, hasClip
 
+# Each window is the location of a potential minimum
 def window(p1, p2, d1, d2, MAX = 10.0):
 	inf1 = p1.span[0]
 	sup1 = MAX if p1.span[1] == None else p1.span[1]
@@ -349,8 +337,6 @@ def window(p1, p2, d1, d2, MAX = 10.0):
 	m2 = None if p2.span[1] == None else (p2.span[0] + p2.span[1]) / 2.0
 	span = sorted([x for x in [inf,sup,m1,m2] if not x == None])
 	clipped = []
-	# TODO: d1 and d2 are a fucking mess, why are they mixed up this way!
-	# TODO: FIX IT! (This has been verified to be the correct ordering btw.
 	for x in range(len(span) - 1):
 		clip1,has1 = clipWindow(p1,d1,(span[x],span[x+1]))
 		clip2,has2 = clipWindow(p2,d2,(span[x],span[x+1]))
@@ -363,64 +349,38 @@ def window(p1, p2, d1, d2, MAX = 10.0):
 
 #Zero when r1 + r2 = I or abs(r1 - r2) = I! (Prev: when r1 = c1)
 def rzero(wave):
-	theta = wave.theta()
+	# Initialize local names for variables
 	p1, p2 = wave.parents()
 	d1, d2 = wave.D
 	span = window(p1, p2, d1, d2)
 	print("D1,D2:", d1, d2)
 	# Project waves onto the intersection subspace
+	# TODO: move POI projections to another function
 	sign = lambda t, R, D: 1.0 if R(t) > magnitude(D(t)) else -1.0
-	Rp = lambda t, R, D: sign(t,R,D) * (abs(R(t)**2.0 - magnitude(D(t))**2.0)**0.5)
+	Rp = lambda t, R, D: sign(t,R,D) * (
+		abs(R(t)**2.0 - magnitude(D(t))**2.0)**0.5)
 	r1p = lambda t: p1.R(t) if d1 == None else Rp(t, p1.R, d1)
 	r2p = lambda t: p2.R(t) if d2 == None else Rp(t, p2.R, d2)
-	#Cr = lambda t, C, D: C(t) if D == None else (C(t)**2.0 + magnitude(D(t))**2.0)**0.5
-	#c1r = lambda C, t: C(t) if d1 == None else Cr(t, C, d1)
-	#c2r = lambda C, t: C(t) if d2 == None else Cr(t, C, d2)
+	# Find point of interection between p1 and p2
 	p,n = (None, None)
 	fA, fB = (None, None)
 	I = lambda t: magnitude(wave.I(t))
+	# When the POI is 1D
 	if abs(wave.theta()) < EPS:
 		n = lambda t: abs(r1p(t) - r2p(t)) - I(t)
 		p = lambda t: abs(r1p(t) + r2p(t)) - I(t)
-		
+	# When the POI is 2D
 	else:
 		Th = wave.theta()
-		nT = math.pi - wave.theta() 
+		nT = math.pi - wave.theta()
 		mx = lambda t: r1p(t)**2.0 + r2p(t)**2.0
 		cosR = lambda t,th: 2.0 * r1p(t) * r2p(t) * math.cos(th)
 		n = lambda t: mx(t) - cosR(t,nT) - (I(t)**2.0)
 		p = lambda t: mx(t) - cosR(t,Th) - (I(t)**2.0)
-	
 
-	
-	'''
-	print("RANGE!")
-	for x in range(100):
-		t = spans[0] + (x * ((spans[-1] - spans[0]) / 100.0))
-		if d1 == None and d2 == None: break
-		if d1 == None:
-			print()
-			print(t, "-----")
-			print("D2:", magnitude(d2(t)))
-			print("R1:", p1.R(t))
-			print("R2:", p2.R(t))
-			print(sign(t,p1.R,d2), Rp(t,p1.R,d2))
-			print(sign(t,p2.R,d2), Rp(t,p2.R,d2))
-		if d2 == None:
-			print(t, "-----")
-			print("D1:", magnitude(d1(t)))
-			print("R1:", p1.R(t))
-			print("R2:", p2.R(t))
-			print(sign(t,p1.R,d1), Rp(t,p1.R,d1))
-			print(sign(t,p2.R,d1), Rp(t,p2.R,d1))
-		#print(n(t), p(t))
-	'''
-	print("SPANS!", span)
-	
-	roots = []
 	# For each possible root do root finding
+	roots = []
 	for inf,sup in span:
-		#inf,sup = spans[x], spans[x+1]
 		r1, r2 = None, None
 		if n(inf) * n(sup) < 0.0:
 			r1 = solve(n, a = inf, b = sup)
@@ -428,9 +388,6 @@ def rzero(wave):
 		if p(inf) * p(sup) < 0.0:
 			r2 = solve(p, a = inf, b = sup)
 			roots.append(r2)
-		
-	print("ROOTS", roots)
-
 	return roots
 
 def waveEq(w1, w2):
@@ -495,10 +452,11 @@ class wavefront:
 		for w1 in self.wave:
 			for w2 in self.wave:
 				#print(w1.N(),w2.N())
+				# Wave siblings have already intersected
 				if waveSibling(self.wave, w1, w2): continue
+				# Waves need to span space to intersect
 				if w1.N() + w2.N() < self.dim: continue
-				# TODO: REMOVE THIS DEBUG!
-				#if w1.N() == 1 or w2.N() == 1: continue
+				# TODO: Vertex intersections!
 				merge = wave(w1, w2, self.dim)
 				print("MERGE",
 					w1.N(), w2.N(),
