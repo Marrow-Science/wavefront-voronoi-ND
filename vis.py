@@ -362,6 +362,8 @@ class VoronoiVis(ShowBase):
 			# Set the center position of the form
 			cX, cY, cZ = center
 			h.setPos(cX, cY, cZ)
+			if w.form.N() == 0:
+				self.scale(h,N,w.R(T))
 			# Set the rotations of the geom
 			if w.form.N() == 1:
 				look = voronoi.vsum(center, w.P(T)[0])
@@ -369,46 +371,17 @@ class VoronoiVis(ShowBase):
 				# Use Look At to set a base orientation
 				h.lookAt(lX, lY, lZ)
 				h.setP(h.getP() + 90.0)
-			# TODO: Set the R orientation for 0-waves
+				self.scale(h,N,w.R(T))
+			# HACK: I give up, will just set location not orient
+			# TODO: make a general vis algorithm
 			if w.form.N() == 2:
-				c1, c2 = p1.center[0], p2.center[0]
-				b1 = w.P(T)[0]
-				b2 = voronoi.norm(voronoi.vec(p1.L(T),p2.L(T)))
-				b2 = voronoi.vec(c1,c2)
-				b2r = voronoi.reject([b1], [b2])[0]
-				RP = [b1,voronoi.norm(b2r)]
-				look1 = voronoi.vsum(center, RP[0])
-				look2 = voronoi.vsum(center, RP[1])
-				lX, lY, lZ = look1
-				h.lookAt(lX, lY, lZ)
-				qb = Quat()
-				qb.setHpr(h.getHpr())
-				RV = w.form.comp(3)[0]
-				print(RV)
-				q = Quat()
-				q.setFromAxisAngle(1.0, toV3(RV))
-				h.setQuat(qb + q)
-				#right = q.getRight()
-				#print(RP[0], right)
-				#ang = voronoi.angle(right, RP[1])
-				#q.setFromAxisAngleRad(ang, toV3(RP[0]))
-				#h.setQuat(q)
-				# Use Look At to set a base orientation
-				#h.setP(h.getP() + 90.0)
-				#h.setR(h.getR() + 90.0)
-				# The || plane is cen-cen and p(T)[0]
-				#aH = planeAngle(RP, 0)
-				#aP = planeAngle(RP, 1)
-				#print(aP, aH)
-				#h.setHpr(aP, aH, 0.0)
-			
-			#print(h.getHpr())
-			#if w.form.N() < 2:
-			#	self.scale(h,N,w.R(T))
-			self.scale(h,N,w.R(T))
-			#else:
-				#print(w.R(T))
-			#	self.scale(h,N,10.0)
+				compV = w.form.comp(3)[0]
+				compVp = voronoi.toSize(compV, w.R(T))
+				compVn = voronoi.toSize(compV, -1.0 * w.R(T))
+				pos = voronoi.vsum(center, compVp)
+				neg = voronoi.vsum(center, compVn)
+				h.getChild(0).setPos(toV3(compVp))
+				h.getChild(1).setPos(toV3(compVn))
 
 def toV3(basic):
 	x, y, z = basic
@@ -496,12 +469,14 @@ def printwave(wave):
 def safeadd(WF):
 	print("<---------WAVE---------->")
 	nw = WF.nextCollision()
+	'''
 	if not nw == None and nw.form.N() == 2:
-		nw.debug = []
+		#nw.debug = []
 		lamcen = lambda T: nw.L(T)
 		lamvec = lambda T: voronoi.scale(nw.P(T)[0], nw.C(T)[0])
-		nw.debug.append((lamcen,lambda T: nw.P(T)[0]))
-		nw.debug.append((lamcen,lambda T: nw.form.comp(3)[0]))
+		#nw.debug.append((lamcen,lambda T: nw.P(T)[0]))
+		#nw.debug.append((lamcen,lambda T: nw.form.comp(3)[0]))
+	'''
 	if nw == None:
 		print("WAVE FAIL!")
 		print(">-----------------------<")
