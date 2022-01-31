@@ -102,7 +102,7 @@ class wave:
 		#TODO: BETTER DEBUG
 		# TODO: split into function
 		if self.val:
-			print("CENTER!", self.span, self.center)
+			#print("CENTER!", self.span, self.center)
 			start = self.span[0]
 			center = self.center[0]
 			I = [vec(p1.x1p(start), center)]
@@ -110,7 +110,7 @@ class wave:
 			#I = self.P(self.span[0])
 			I = norm(self.I(self.span[0]))
 			self.form = form(center, I, (p1.form, p2.form))
-			print("BASE", self.form.base, self.center)
+			#print("BASE", self.form.base, self.center)
 			self.dim = N - self.form.N() - 1
 			#print("FORM DIMS:", N, self.form.N(), self.dim)
 			if not(self.dim == p1.dim-1 or self.dim == p2.dim-1):
@@ -342,8 +342,8 @@ def window(p1, p2, d1, d2, MAX = 10.0):
 		clip2,has2 = clipWindow(p2,d2,(span[x],span[x+1]))
 		if clip1 == None or clip2 == None: continue
 		win = [max([clip1[0],clip2[0]]),min([clip1[1],clip2[1]])]
-		if has1 or has2:
-			print("CLIP:", x, span[x], span[x+1], clip1, clip2, win)
+		# if has1 or has2:
+			# print("CLIP:",x,span[x],span[x+1],clip1,clip2,win)
 		clipped += [win]
 	return clipped
 
@@ -353,7 +353,7 @@ def rzero(wave):
 	p1, p2 = wave.parents()
 	d1, d2 = wave.D
 	span = window(p1, p2, d1, d2)
-	print("D1,D2:", d1, d2)
+	# print("D1,D2:", d1, d2)
 	# Project waves onto the intersection subspace
 	# TODO: move POI projections to another function
 	sign = lambda t, R, D: 1.0 if R(t) > magnitude(D(t)) else -1.0
@@ -435,6 +435,8 @@ class wavefront:
 			for vec in wave.debug:
 				self.debug.append(debugvec(wave.span,vec))
 		self.wave.append(wave)
+	def popWave(self):
+		self.wave.pop()
 	# Return all waves active at t = T
 	def cut(self, T):
 		ret = []
@@ -455,12 +457,12 @@ class wavefront:
 				# Wave siblings have already intersected
 				if waveSibling(self.wave, w1, w2): continue
 				# Waves need to span space to intersect
-				if w1.N() + w2.N() < self.dim: continue
-				# TODO: Vertex intersections!
+				if w1.N() + w2.N() < self.dim - 1: continue
+				# Waves that barely span space make a vertex
+				if w1.N() + w2.N() == self.dim - 1:
+					# TODO: Vertex intersections!
+					continue
 				merge = wave(w1, w2, self.dim)
-				print("MERGE",
-					w1.N(), w2.N(),
-					merge.N(), merge.valid())
 				if not merge.valid(): continue
 				T = merge.span[0]
 				if col == None or T < minT:
@@ -529,7 +531,6 @@ def project(basis, vector):
 			base = norm(b)
 			#TODO: Does this work?
 			mag = magnitude(vec)
-			#print(mag)
 			comp = scale(base, mag * cosangle(base, vec))
 			proj = vsum(comp, proj)
 		ret.append(proj)

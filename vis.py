@@ -225,10 +225,14 @@ def createVectorGeometry(tag = 'def'):
 	return geom
 
 class VoronoiVis(ShowBase):
-	def __init__(self):
+	def __init__(self, WF):
 		ShowBase.__init__(self)
+		# Store the wavefront here
+		self.wavefront = WF
+		# Initiate hotkeys
 		self.init_GUI()
 		self.init_camera()
+		self.init_keybinds()
 		# Initialize the geometry
 		self.geom0 = createSphereGeometry(1.0,0)
 		self.geom1 = createSphereGeometry(1.0,1)
@@ -250,6 +254,7 @@ class VoronoiVis(ShowBase):
 	def init_camera(self):
 		keymap = base.win.get_keyboard_map()
 		self.key = {
+			# Camera Keys
 			"w": keymap.get_mapped_button('w'),
 			"s": keymap.get_mapped_button('s'),
 			"a": keymap.get_mapped_button('a'),
@@ -264,6 +269,10 @@ class VoronoiVis(ShowBase):
 		}
 		self.taskMgr.add(self.camera_task, 'CameraControl')
 		self.disableMouse()
+	
+	def init_keybinds(self):
+		self.accept('n', self.addWave)
+		self.accept('b', self.removeWave)
 
 	def camera_task(self,task):
 		isDown = self.mouseWatcherNode.is_button_down
@@ -283,12 +292,37 @@ class VoronoiVis(ShowBase):
 		if isDown(self.key["d"]): R(neg * 2.0,0.0,0.0)
 		return Task.cont
 
+	def addWave(self):
+		nw = self.wavefront.nextCollision()
+		if not nw == None: self.wavefront.addWave(nw)
+		self.updateWavefront()
+		for i,vec in enumerate(debugVectors(nw)):
+			handle = self.debugNode(-1 * i)
+			self.debug.append((vec, handle))
+		debugPrint(nw)
+		self.show()
+
+	def removeWave(self):
+		self.wavefront.popWave()
+		self.updateWavefront()
+		self.show()
+
 	def show(self):
 		#print(self.T['value'])
 		self.setTime(self.T['value'])
 	
-	def registerWavefront(self, wavefront):
-		N = wavefront.N()
+	def clearWaveCache(self):
+		for w,h in self.wave:
+			h.removeNode()
+		for v,h in self.debug:
+			h.removeNode()
+		self.wave = []
+		self.debug = []
+
+	def updateWavefront(self):
+		self.clearWaveCache()
+		wavefront = self.wavefront
+		N = self.wavefront.N()
 		# Visualize the wavefronts
 		for i,wave in enumerate(wavefront.wave):
 			# Render the node
@@ -304,14 +338,18 @@ class VoronoiVis(ShowBase):
 			self.wave.append((wave,handle))
 		# Register the debug vectors
 		for i,vec in enumerate(wavefront.debug):
-			node = ModelNode('debug'+str(i))
-			for n,g in enumerate(self.vector):
-				geomNode = GeomNode('geom' + str(n))
-				geomNode.addGeom(g)
-				node.addChild(geomNode)
-			handle = self.render.attachNewNode(node)
-			handle.setTransparency(TransparencyAttrib.MDual)
+			handle = self.debugNode(i)
 			self.debug.append((vec, handle))
+
+	def debugNode(self, i):
+		node = ModelNode('debug'+str(i))
+		for n,g in enumerate(self.vector):
+			geomNode = GeomNode('geom' + str(n))
+			geomNode.addGeom(g)
+			node.addChild(geomNode)
+		handle = self.render.attachNewNode(node)
+		handle.setTransparency(TransparencyAttrib.MDual)
+		return handle
 
 	def vecplace(self, handle, vec, T):
 		place = vec[0](T)
@@ -466,28 +504,32 @@ def printwave(wave):
 	print("CENTER", wave.center)
 	print("SPAN", wave.span)
 
-def safeadd(WF):
-	print("<---------WAVE---------->")
-	nw = WF.nextCollision()
-	'''
-	if not nw == None and nw.form.N() == 2:
-		#nw.debug = []
-		lamcen = lambda T: nw.L(T)
-		lamvec = lambda T: voronoi.scale(nw.P(T)[0], nw.C(T)[0])
-		#nw.debug.append((lamcen,lambda T: nw.P(T)[0]))
-		#nw.debug.append((lamcen,lambda T: nw.form.comp(3)[0]))
-	'''
-	if nw == None:
-		print("WAVE FAIL!")
-		print(">-----------------------<")
-	else:
-		printwave(nw)
-		print(">-----------------------<")
-		WF.addWave(nw)
+def debugVectors(nw):
+	ret = []
+	lamcen = lambda T: nw.L(T)
+	lamvec = lambda T: voronoi.scale(nw.P(T)[0], nw.C(T)[0])
+	ret.append((lamcen,lamvec))
+	ret.append((lamcen,lambda T: nw.P(T)[0]))
+	#ret.append((lamcen,lambda T: nw.form.comp(3)[0]))
+	return [voronoi.debugvec(nw.span, x) for x in ret]
+
+def waveTreePrint(wave,idx):
+	print("\t"*idx, wave, wave.span)
+	if wave.leaf(): return
+	p1, p2 = wave.parents()
+	waveTreePrint(p1, idx + 1)
+	waveTreePrint(p2, idx + 1)
+
+def debugPrint(nw):
+	print("-------- DEBUG PRINT ---------")
+	p1, p2 = nw.parents()
+	print("PARENT N:",p1.N(), p2.N())
+	waveTreePrint(nw,1)
+	print("------ END DEBUG PRINT -------")
 
 if __name__ == "__main__":
 
-
+	'''
 	data = [
 	(0.0732764158707837, 0.48585568272536983, 0.5781378249494682),
 	(0.3939588778405376, 0.7757835671885716, 0.08201036150890328),
@@ -498,30 +540,17 @@ if __name__ == "__main__":
 	(0.4666398805949532, 0.7113641279878318, 0.2547308933969078)]
 	data = [[x*10,y*10,z*10] for x,y,z in data]
 	weight = [1.0, 2.0, 3.0, 4.0, 1.0, 0.5, 1.5]
+	'''
 
 	#data = [[2.0,3.0,0.0],[-1.0,0.0,2.0],[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
-	#weight = [1.0, 3.0, 2.0, 2.1]
-	#data = [[2.0,3.0,0.0],[-1.0,0.0,2.0],[0.0,2.0,-1.0]]
-	#weight = [1.0, 3.0, 2.0]
+	#weight = [1.0, 2.5, 2.0, 2.1]
+	data = [[5.0,0.0,0.0],[0.0,5.0,0.0],[0.0,0.0,5.0],[5.0,0.0,5.0]]
+	weight = [2.5, 2.1, 2.0, 2.2]
 	#data = [[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
 	#weight = [2.0, 2.0]
 
 
-	root = VoronoiVis()
 	WF = voronoi.wavefront(data, weight)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	safeadd(WF)
-	root.registerWavefront(WF)
+	root = VoronoiVis(WF)
 	root.setTime(0.5)
 	root.run()
