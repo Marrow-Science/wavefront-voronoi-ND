@@ -273,6 +273,8 @@ class VoronoiVis(ShowBase):
 	def init_keybinds(self):
 		self.accept('n', self.addWave)
 		self.accept('b', self.removeWave)
+		self.accept('i', self.isolateWave)
+		self.accept('p', self.printWave)
 
 	def camera_task(self,task):
 		isDown = self.mouseWatcherNode.is_button_down
@@ -306,6 +308,33 @@ class VoronoiVis(ShowBase):
 		self.wavefront.popWave()
 		self.updateWavefront()
 		self.show()
+
+	def isolateWave(self):
+		w = self.wave[-1][0]
+		tree = []
+		nxt = [w]
+		while len(nxt) > 0:
+			nw = nxt.pop()
+			if not nw.leaf():
+				p1,p2 = nw.parents()
+				nxt += [p1,p2]
+			tree.append(nw)
+		# Update wave visibility
+		for w,h in self.wave:
+			if w in tree: continue
+			else: h.hide()
+		self.show()
+
+	def printWave(self):
+		w = self.wave[-1][0]
+		T = self.T['value']
+		print("-------- WAVE DIAGNOSTIC -------")
+		print("Wave", w)
+		print("C:", w.C(T))
+		print("L:", w.L(T))
+		print("------ END WAVE DIAGNOSTIC -----")
+		
+		pass
 
 	def show(self):
 		#print(self.T['value'])
@@ -545,7 +574,7 @@ if __name__ == "__main__":
 	#data = [[2.0,3.0,0.0],[-1.0,0.0,2.0],[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
 	#weight = [1.0, 2.5, 2.0, 2.1]
 	data = [[5.0,0.0,0.0],[0.0,5.0,0.0],[0.0,0.0,5.0],[5.0,0.0,5.0]]
-	weight = [2.5, 2.1, 2.0, 2.2]
+	weight = [2.5, 2.0, 2.0, 2.2]
 	#data = [[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
 	#weight = [2.0, 2.0]
 
