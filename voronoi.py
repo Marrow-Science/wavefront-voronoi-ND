@@ -66,7 +66,7 @@ def formInter(f1, f2):
 class baseWave:
 	def __init__(self, center, weight, N):
 		# TODO: BETTER DEBUG!
-		self.debug = None
+		self.debug = []
 		# TODO: BETTER DEBUG!
 		self.weight = weight
 		self.center = (center, None)
@@ -92,7 +92,7 @@ class wave:
 	# Basic initialization from a pair of intersecting parents
 	def __init__(self, p1, p2, N):
 		# TODO: BETTER DEBUG
-		self.debug = None
+		self.debug = []
 		# TODO: BETTER DEBUG
 		self.p1 = p1
 		self.p2 = p2
@@ -172,27 +172,31 @@ class wave:
 
 	# Full case of two directed wavefronts
 	# In this case the intersection plane is 2D and there are two D vectors
-	def interInitNxN(sekf, p1, p2, c1, c2, f1, f2):
-		P = lambda T: interPlane(f1, f2)
-		x1 = lambda T: toSize(project(P, f1.X)[0], p1.C(T)[0])
-		x2 = lambda T: toSize(project(P, f2.X)[0], p2.C(T)[0])
+	def interInitNxN(self, p1, p2, c1, c2, f1, f2):
+		P = interPlane(f1, f2)
+		x1 = lambda T: toSize(project(P, [f1.X])[0], p1.C(T)[0])
+		x2 = lambda T: toSize(project(P, [f2.X])[0], p2.C(T)[0])
 		x1p = lambda T: vsum(c1, x1(T))
 		x2p = lambda T: vsum(c2, x2(T))
 		I = lambda T: vec(x1p(T), x2p(T))
-		d1 = lambda T: reject([P], x1(T))
-		d2 = lambda T: reject([P], x2(T))
+		d1 = lambda T: reject(P, [x1(T)])[0]
+		d2 = lambda T: reject(P, [x2(T)])[0]
 		c1a = lambda T: angle(I(T), x1(T))
 		c2a = lambda T: angle(I(T), x2(T))
 		c1t = lambda T: (math.pi / 2.0) - c1a(T)
 		c2t = lambda T: (math.pi / 2.0) - c2a(T)
-		t1 = angle(vec(c1,c2), project(P, f1.X)[0])
-		t2 = angle(vec(c2,c1), project(P, f2.X)[0])
+		t1 = angle(vec(c1,c2), project(P, [f1.X])[0])
+		t2 = angle(vec(c2,c1), project(P, [f2.X])[0])
 		nT = (t1 + t2)
 		Th = math.pi - (t1 + t2)
 		sin = math.sin
 		C2L = ( (lambda T: 0.0, lambda T: sin(c2a(T)) / sin(c1a(T))),
 			(lambda T: 0.0, lambda T: sin(c2t(T)) / sin(c1t(T))))
-		return P, Th, I, D, C2L
+		Pl = lambda T: P
+		# DEBUG for now!
+		# TODO: yeet, I'm glad I can debug this stuff here
+		# TODO: debugging this stuff in 4D would be a headache.
+		return Pl, Th, I, (d1, d2), C2L
 
 	def spanInit(self):
 		time,val = timeSpan(self)
@@ -237,8 +241,8 @@ class wave:
 		else:
 			cos = lambda t: math.cos(t)
 			c2l = lambda x, t: self.C2L[0][x](t)
-			f0 = lambda t: 2.0 * (1.0 - cos(theta) * c2l[1](t))
-			f1 = lambda t: -2.0 * cos(theta) * c2l[0](t)
+			f0 = lambda t: 2.0 * (1.0 - cos(theta) * c2l(1,t))
+			f1 = lambda t: -2.0 * cos(theta) * c2l(0,t)
 			f2 = lambda t: r1p(t)**2.0 - I(t)**2.0 - r2p(t)**2.0
 			n, p = quadratic(f0, f1, f2)
 			solution = [n,p]
@@ -461,7 +465,17 @@ class wavefront:
 				# Waves that barely span space make a vertex
 				if w1.N() + w2.N() == self.dim - 1:
 					# TODO: Vertex intersections!
-					continue
+					print("POTVRT:", w1.N(), w2.N())
+					m = wave(w1, w2, self.dim)
+					if not m.valid():
+						print("INVALID!")
+					else:
+						print("VRT:",m,m.span)
+					# Add debug vectors to parent(s)
+					s = m.span
+					vecs = [(w1.L,m.D[0]),(w2.L,m.D[1])]
+					for v in vecs:
+						self.debug.append(debugvec(s,v))
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue
 				T = merge.span[0]
