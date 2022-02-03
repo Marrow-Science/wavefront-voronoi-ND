@@ -113,6 +113,7 @@ class wave:
 			#print("BASE", self.form.base, self.center)
 			self.dim = N - self.form.N() - 1
 			#print("FORM DIMS:", N, self.form.N(), self.dim)
+			# TODO: Uhhh, this may be incorrect?
 			if not(self.dim == p1.dim-1 or self.dim == p2.dim-1):
 				self.val = False
 		else: self.dim = N - 1
@@ -439,8 +440,7 @@ class wavefront:
 			for vec in wave.debug:
 				self.debug.append(debugvec(wave.span,vec))
 		self.wave.append(wave)
-	def popWave(self):
-		self.wave.pop()
+	def popWave(self): self.wave.pop()
 	# Return all waves active at t = T
 	def cut(self, T):
 		ret = []
@@ -467,15 +467,33 @@ class wavefront:
 					# TODO: Vertex intersections!
 					print("POTVRT:", w1.N(), w2.N())
 					m = wave(w1, w2, self.dim)
+					print("Th:",m.theta())
 					if not m.valid():
 						print("INVALID!")
 					else:
 						print("VRT:",m,m.span)
 					# Add debug vectors to parent(s)
-					s = m.span
-					vecs = [(w1.L,m.D[0]),(w2.L,m.D[1])]
-					for v in vecs:
-						self.debug.append(debugvec(s,v))
+					p1, p2 = m.parents()
+					c1 = lambda t: toSize(p1.P(t)[0], p1.C(t, clamp = False)[0])
+					c2 = lambda t: toSize(p2.P(t)[0], p2.C(t, clamp = False)[0])
+					s1 = p1.span
+					s2 = p2.span
+					v1 = [
+						(lambda t: p1.L(t, clamp = False),m.D[0]),
+						(lambda t: p1.L(t, clamp = False),c1)
+					]
+						
+					v2 = [
+						(lambda t: p2.L(t, clamp = False),m.D[1]),
+						(lambda t: p2.L(t, clamp = False),c2)
+					]
+					for v in v1:
+						self.debug.append(
+							debugvec(s1,v))
+					for v in v2:
+						self.debug.append(
+							debugvec(s2,v))
+					continue
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue
 				T = merge.span[0]

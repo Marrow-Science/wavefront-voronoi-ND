@@ -330,8 +330,8 @@ class VoronoiVis(ShowBase):
 		T = self.T['value']
 		print("-------- WAVE DIAGNOSTIC -------")
 		print("Wave", w)
-		print("C:", w.C(T))
-		print("L:", w.L(T))
+		print("C:", w.C(T, clamp = False))
+		print("L:", w.L(T, clamp = False))
 		print("------ END WAVE DIAGNOSTIC -----")
 		
 		pass
@@ -349,8 +349,8 @@ class VoronoiVis(ShowBase):
 		self.debug = []
 
 	def updateWavefront(self):
-		self.clearWaveCache()
 		wavefront = self.wavefront
+		self.clearWaveCache()
 		N = self.wavefront.N()
 		# Visualize the wavefronts
 		for i,wave in enumerate(wavefront.wave):
@@ -383,7 +383,7 @@ class VoronoiVis(ShowBase):
 	def vecplace(self, handle, vec, T):
 		place = vec[0](T)
 		vec = [0.0]*len(place) if vec[1] == None else vec[1](T)
-		#print("mag", voronoi.magnitude(vec))
+		#print("placeVec", vec)
 		siz = len(handle.children)
 		for i,c in enumerate(handle.children):
 			per = (1.0 * i) / siz
@@ -505,7 +505,6 @@ def drawwaves(root, canvas, scale, WF):
 		for c in col.center:
 			if c == None: continue
 			canvas.create_oval(canvCoords(c), fill = "red")
-		#print("DAFUQ?Q?Q?Q?")
 		delX = voronoi.toSize(col.form.X, col.C(time)[0])
 		delR = col.R(time)
 		C = voronoi.vsum(col.p1.center[0], delX)
