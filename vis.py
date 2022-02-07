@@ -298,10 +298,10 @@ class VoronoiVis(ShowBase):
 		nw = self.wavefront.nextCollision()
 		if not nw == None: self.wavefront.addWave(nw)
 		self.updateWavefront()
-		for i,vec in enumerate(debugVectors(nw)):
-			handle = self.debugNode(-1 * i)
-			self.debug.append((vec, handle))
-		debugPrint(nw)
+		#for i,vec in enumerate(debugVectors(nw)):
+		#	handle = self.debugNode(-1 * i)
+		#	self.debug.append((vec, handle))
+		debugPrint(self.wavefront, nw)
 		self.show()
 
 	def removeWave(self):
@@ -408,20 +408,19 @@ class VoronoiVis(ShowBase):
 
 	# Morph the wavefronts to the time
 	def setTime(self, T):
-		#print("TIME", T)
 		# Debug vectors
 		for v,h in self.debug:
 			if not voronoi.inSpan(T, v.span):
-				h.detachNode()
+				h.hide()
 				continue
-			h.reparentTo(self.render)
+			else: h.show()
 			self.vecplace(h, v.vec, T)
 		# Wave placement
 		for w,h in self.wave:
 			if not voronoi.inSpan(T, w.span):
-				h.detachNode()
+				h.hide()
 				continue
-			h.reparentTo(self.render)
+			else: h.show()
 			N = w.N()
 			center = w.L(T)
 			p1, p2 = (None,None)
@@ -541,18 +540,18 @@ def debugVectors(nw):
 	#ret.append((lamcen,lambda T: nw.form.comp(3)[0]))
 	return [voronoi.debugvec(nw.span, x) for x in ret]
 
-def waveTreePrint(wave,idx):
-	print("\t"*idx, wave, wave.span)
+def waveTreePrint(WF, wave,idx):
+	print("\t"*idx, voronoi.waveID(WF,wave), wave.span)
 	if wave.leaf(): return
 	p1, p2 = wave.parents()
-	waveTreePrint(p1, idx + 1)
-	waveTreePrint(p2, idx + 1)
+	waveTreePrint(WF, p1, idx + 1)
+	waveTreePrint(WF, p2, idx + 1)
 
-def debugPrint(nw):
+def debugPrint(WF, nw):
 	print("-------- DEBUG PRINT ---------")
 	p1, p2 = nw.parents()
 	print("PARENT N:",p1.N(), p2.N())
-	waveTreePrint(nw,1)
+	waveTreePrint(WF, nw,1)
 	print("------ END DEBUG PRINT -------")
 
 if __name__ == "__main__":

@@ -175,19 +175,19 @@ class wave:
 	# In this case the intersection plane is 2D and there are two D vectors
 	def interInitNxN(self, p1, p2, c1, c2, f1, f2):
 		P = interPlane(f1, f2)
-		x1 = lambda T: toSize(project(P, [f1.X])[0], p1.C(T)[0])
-		x2 = lambda T: toSize(project(P, [f2.X])[0], p2.C(T)[0])
-		x1p = lambda T: vsum(c1, x1(T))
-		x2p = lambda T: vsum(c2, x2(T))
+		x1 = norm(project(P, [f1.X])[0])
+		x2 = norm(project(P, [f2.X])[0])
+		x1p = lambda T: project(P, [p1.L(T)])[0]
+		x2p = lambda T: project(P, [p2.L(T)])[0]
 		I = lambda T: vec(x1p(T), x2p(T))
-		d1 = lambda T: reject(P, [x1(T)])[0]
-		d2 = lambda T: reject(P, [x2(T)])[0]
-		c1a = lambda T: angle(I(T), x1(T))
-		c2a = lambda T: angle(I(T), x2(T))
+		d1 = lambda T: reject(P, [p1.L(T)])[0]
+		d2 = lambda T: reject(P, [p2.L(T)])[0]
+		c1a = lambda T: angle(I(T), x1)
+		c2a = lambda T: angle(I(T), x2)
 		c1t = lambda T: (math.pi / 2.0) - c1a(T)
 		c2t = lambda T: (math.pi / 2.0) - c2a(T)
-		t1 = angle(vec(c1,c2), project(P, [f1.X])[0])
-		t2 = angle(vec(c2,c1), project(P, [f2.X])[0])
+		t1 = angle(vec(c1,c2), x1)
+		t2 = angle(vec(c2,c1), x2)
 		nT = (t1 + t2)
 		Th = math.pi - (t1 + t2)
 		sin = math.sin
@@ -197,6 +197,8 @@ class wave:
 		# DEBUG for now!
 		# TODO: yeet, I'm glad I can debug this stuff here
 		# TODO: debugging this stuff in 4D would be a headache.
+		self.x1 = lambda t: x1
+		self.x2 = lambda t: x2
 		return Pl, Th, I, (d1, d2), C2L
 
 	def spanInit(self):
@@ -273,12 +275,12 @@ def inSpan(T, span, eps = EPS):
 
 # Clamp a wave's C between extremes
 def clampSpan(wave, T, eps = EPS):
-	if (T + EPS) < self.span[0]:
+	if (T + EPS) < wave.span[0]:
 		return [0.0], True
-	if (T - EPS) > self.span[1]:
+	if (T - EPS) > wave.span[1]:
 		# TODO: potential bug here, need to calculate with D
 		print("Potential Bug!")
-		return [magnitude(vec(self.center[0], self.center[1]))], True
+		return [magnitude(vec(wave.center[0], wave.center[1]))], True
 	return None, False
 
 def timeSpan(wave, eps = EPS, bound = BOUND):
@@ -421,6 +423,27 @@ class debugvec:
 		self.span = span
 		self.vec = vec
 
+# Identify a wave uniquely in the wavefront
+def waveID(WF, wave):
+	if wave in WF.ids.keys(): return WF.ids[wave]
+	if wave.leaf(): return [-1]
+	return sorted(waveID(WF,wave.p1) + waveID(WF,wave.p2))
+
+def waveID2(WF, w1, w2):
+	return sorted(waveID(WF,w1) + waveID(WF,w2))
+
+# return if two waves are equivalent
+def waveIDEQ(id1,id2):
+	if not len(id1) == len(id2): return False
+	for x,y in zip(id1,id2):
+		if not x == y: return False
+	return True
+
+def waveIDIN(overcache, wid):
+	for wid2 in overcache:
+		if waveIDEQ(wid, wid2): return True
+	return False
+
 # A wavefront is composed of many waves
 class wavefront:
 	def __init__(self, points, weights):
@@ -430,16 +453,24 @@ class wavefront:
 		self.wave = []
 		self.debug = []
 		self.start()
+		# Keep track of wave IDs for debug purposes
+		self.ids = {}
+		self.nextID = 0
 	def start(self):
 		self.wave = []
 		for point, weight in zip(self.point, self.weight):
-			self.wave.append(baseWave(point, weight, self.dim))
+			self.addWave(baseWave(point,weight,self.dim))
 	def N(self): return self.dim
 	def addWave(self,wave):
 		if not wave.debug == None:
 			for vec in wave.debug:
 				self.debug.append(debugvec(wave.span,vec))
 		self.wave.append(wave)
+		if wave.leaf(): 
+			self.ids[wave] = [self.nextID]
+			self.nextID += 1
+		else:
+			self.ids[wave] = waveID(self,wave)
 	def popWave(self): self.wave.pop()
 	# Return all waves active at t = T
 	def cut(self, T):
@@ -455,6 +486,7 @@ class wavefront:
 		col = None
 		minT = 0.0
 		endT = 0.0
+		overcache = []
 		for w1 in self.wave:
 			for w2 in self.wave:
 				#print(w1.N(),w2.N())
@@ -462,6 +494,10 @@ class wavefront:
 				if waveSibling(self.wave, w1, w2): continue
 				# Waves need to span space to intersect
 				if w1.N() + w2.N() < self.dim - 1: continue
+				# ID candidates to prevent overlapp.
+				wid = waveID2(self, w1, w2)
+				if waveIDIN(overcache, wid): continue
+				else: overcache.append(wid)
 				# Waves that barely span space make a vertex
 				if w1.N() + w2.N() == self.dim - 1:
 					# TODO: Vertex intersections!
@@ -472,27 +508,23 @@ class wavefront:
 						print("INVALID!")
 					else:
 						print("VRT:",m,m.span)
+					p1,p2 = m.parents()
+					print(waveID(self,p1), waveID(self,p2))
 					# Add debug vectors to parent(s)
-					p1, p2 = m.parents()
-					c1 = lambda t: toSize(p1.P(t)[0], p1.C(t, clamp = False)[0])
-					c2 = lambda t: toSize(p2.P(t)[0], p2.C(t, clamp = False)[0])
-					s1 = p1.span
-					s2 = p2.span
-					v1 = [
-						(lambda t: p1.L(t, clamp = False),m.D[0]),
-						(lambda t: p1.L(t, clamp = False),c1)
-					]
-						
-					v2 = [
-						(lambda t: p2.L(t, clamp = False),m.D[1]),
-						(lambda t: p2.L(t, clamp = False),c2)
-					]
-					for v in v1:
-						self.debug.append(
-							debugvec(s1,v))
-					for v in v2:
-						self.debug.append(
-							debugvec(s2,v))
+					l1 = lambda t: p1.L(t, clamp = False)
+					l2 = lambda t: p2.L(t, clamp = False)
+					d1 = lambda t: m.D[0](t)
+					d2 = lambda t: m.D[1](t)
+					c1 = lambda t: toSize(p1.P(t)[0],
+						p1.C(t, clamp = False)[0])
+					c2 = lambda t: toSize(p2.P(t)[0],
+						p2.C(t, clamp = False)[0])
+					s = m.span
+					self.debug.append(debugvec(s,(l1,d1)))
+					self.debug.append(debugvec(s,(l2,d2)))
+					self.debug.append(debugvec(s,(l1,m.I)))
+					self.debug.append(debugvec(s,(l1,m.x1)))
+					self.debug.append(debugvec(s,(l2,m.x2)))
 					continue
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue
