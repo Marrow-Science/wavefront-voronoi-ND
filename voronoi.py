@@ -85,7 +85,7 @@ class baseWave:
 	def mag(self): return self.weight
 	def theta(self, T): return None
 	def C(self, T): return [0.0]
-	def L(self, T): return self.center[0]
+	def L(self, T, clamp = True): return self.center[0]
 	def R(self, T): return self.weight * T
 
 class wave:
@@ -176,11 +176,11 @@ class wave:
 		P = interPlane(f1, f2)
 		x1 = norm(project(P, [f1.X])[0])
 		x2 = norm(project(P, [f2.X])[0])
-		x1p = lambda T: project(P, [p1.L(T)])[0]
-		x2p = lambda T: project(P, [p2.L(T)])[0]
+		x1p = lambda T: project(P, [p1.L(T, clamp = False)])[0]
+		x2p = lambda T: project(P, [p2.L(T, clamp = False)])[0]
 		I = lambda T: vec(x1p(T), x2p(T))
-		d1 = lambda T: reject(P, [p1.L(T)])[0]
-		d2 = lambda T: reject(P, [p2.L(T)])[0]
+		d1 = lambda T: reject(P, [p1.L(T, clamp = False)])[0]
+		d2 = lambda T: reject(P, [p2.L(T, clamp = False)])[0]
 		# Utility Lambdas; Line Clamp and Right Compliment
 		lClamp = lambda th: th if th < math.pi else th - math.pi
 		rC = lambda th, T: (math.pi / 2.0) - th(T)
@@ -259,7 +259,9 @@ class wave:
 			f1 = lambda t: -2.0 * cos(theta) * c2l(0,t)
 			f2 = lambda t: r1p(t)**2.0 - I(t)**2.0 - r2p(t)**2.0
 			n, p = quadratic(f0, f1, f2)
-			solution = [n,p]
+			# Only use the positive solution TODO: is this right?
+			#solution = [n,p]
+			solution = [p]
 		# We only use the smallest solution TODO: possible NxN bug here
 		sol = sorted([s(T) for s in solution])
 		return sol
@@ -268,7 +270,9 @@ class wave:
 	def L(self, T, clamp = True):
 		d = None if self.D[0] == None else self.D[0](T)
 		C = scale(self.P(T)[0], self.C(T, clamp)[0])
-		return vsum(self.p1.center[0], vsum(d, C))
+		#return vsum(self.p1.center[0], vsum(d, C))
+		ret = vsum(self.p1.L(T, clamp), vsum(d, C))
+		return ret
 
 	# The radius perpendicular to the form at time T
 	def R(self, T):
@@ -520,6 +524,10 @@ class wavefront:
 					print("Span inf sup", inf, sup)
 					print("t1,t2",m.t1(inf), m.t2(inf))
 					print("t1,t2",m.t1n(inf), m.t2n(inf))
+					print("Cinf",m.C(inf,clamp = False))
+					if not sup == None:
+						print("Csup",
+							m.C(sup,clamp = False))
 					print("Th:",m.theta(inf))
 					if not m.valid():
 						print("INVALID!")
@@ -537,11 +545,19 @@ class wavefront:
 					c2 = lambda t: toSize(p2.P(t)[0],
 						p2.C(t, clamp = False)[0])
 					s = m.span
+					# DEBUG SETUP
 					self.debug.append(debugvec(s,(l1,d1)))
 					self.debug.append(debugvec(s,(l2,d2)))
 					self.debug.append(debugvec(s,(l1,m.I)))
-					self.debug.append(debugvec(s,(l1,m.x1)))
-					self.debug.append(debugvec(s,(l2,m.x2)))
+					# DEBUG EXECUTION
+					lr = lambda t: toSize(m.P(t)[0],
+						m.C(t, clamp = False)[0])
+					lrn = lambda t: norm(m.P(t)[0])
+					lm = lambda t: m.L(t, clamp = False)
+					v1 = lambda t: m.P(t)[0]
+					v2 = lambda t: m.P(t)[1]
+					# DEBUG ATTACH
+					self.debug.append(debugvec(s,(l1,lambda t: vec(l1(t),lm(t)))))
 					continue
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue
