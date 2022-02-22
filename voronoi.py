@@ -181,35 +181,23 @@ class wave:
 		I = lambda T: vec(x1p(T), x2p(T))
 		d1 = lambda T: reject(P, [p1.L(T, clamp = False)])[0]
 		d2 = lambda T: reject(P, [p2.L(T, clamp = False)])[0]
-		# Utility Lambdas; Line Clamp and Right Compliment
-		lClamp = lambda th: th if th < math.pi else th - math.pi
-		rC = lambda th, T: (math.pi / 2.0) - th(T)
-		# Calculate angles (No flips)
-		t1n = lambda T: lClamp(angle(x1, vec(x1p(T),x2p(T))))
-		t2n = lambda T: lClamp(angle(x2, vec(x2p(T),x1p(T))))
-		# Lamdas to determine if vectors need to be flipped
-		dotL = dot(x1,x2) > 0.0
-		needsFlip = lambda T: t1n(T) + t2n(T) > math.pi
-		hasFlip = lambda h,t,T: needsFlip(T) and (dotL or h(T) > t(T))
-		vF = lambda th, flip, T: math.pi - th(T) if flip else th(T)
-		# Implement the flips if the vectors need them
-		t1 = lambda T: vF(t1n,hasFlip(t1n,t2n,T),T)
-		t2 = lambda T: vF(t2n,hasFlip(t2n,t1n,T),T)
-		Th = lambda T: t1(T) + t2(T)
+		# Calculate angles (exterior or interior)
+		t1a = lambda T: angle(P[0], vec(x1p(T),x2p(T)))
+		t2a = lambda T: angle(P[1], vec(x2p(T),x1p(T)))
+		# Ensure the angle is interior and not exterior angle
+		hC = lambda th, T: th(T) < (math.pi / 2.0)
+		rC = lambda th, T: math.pi - th(T)
+		interior = lambda th, T: th(T) if hC(th,T) else rC(th,T)
+		# Final angle lambdas
+		t1 = lambda T: interior(t1a,T)
+		t2 = lambda T: interior(t2a,T)
+		Th = lambda T: math.pi - (t1(T) + t2(T))
 		# Parameterize C2 in terms of C1
 		sin = lambda th: math.sin(th)
-		C2L = (lambda T: 0.0, lambda T: sin(rC(t1,T)) / sin(rC(t2,T)))
+		C2L = (lambda T: 0.0, lambda T: sin(t1(T)) / sin(t2(T)))
 		# Store the plane of intersection
 		Pl = lambda T: P
-		# DEBUG for now!
-		# TODO: yeet, I'm glad I can debug this stuff here
-		# TODO: debugging this stuff in 4D would be a headache.
-		self.x1 = lambda t: x1
-		self.x2 = lambda t: x2
-		self.t1 = t1
-		self.t2 = t2
-		self.t1n = t1n	
-		self.t2n = t2n	
+		# Return the setup information
 		return Pl, Th, I, (d1, d2), C2L
 
 	def spanInit(self):
@@ -235,14 +223,11 @@ class wave:
 			if not valid: print("Impossible situation occured")
 			return ret
 		# Calculate the form intersection
-		theta = self.theta(T)
+		theta = self.theta
 		p1, p2 = self.parents()
-		d1, d2 = self.D
-		# Project waves onto the intersection subspace TODO: R > D!
-		sign = lambda t, R, D: 1.0 if R(t) > magnitude(D(t)) else -1.0
-		Rp = lambda t, R, D: abs(R(t)**2.0 - magnitude(D(t))**2.0)**0.5
-		r1p = lambda t: p1.R(t) if d1 == None else Rp(t,p1.R,d1)
-		r2p = lambda t: p2.R(t) if d2 == None else Rp(t,p2.R,d2)
+		# Project waves onto the intersection subspace
+		r1p = projectPOI(p1.R, self.D[0])
+		r2p = projectPOI(p2.R, self.D[1])
 		# Solve the quadratic (or linear) equation for two spheres
 		I = lambda t: magnitude(self.I(t))
 		solution = []
@@ -255,9 +240,9 @@ class wave:
 		else:
 			cos = lambda t: math.cos(t)
 			c2l = lambda x, t: self.C2L[x](t)
-			f0 = lambda t: 2.0 * (1.0 - cos(theta) * c2l(1,t))
-			f1 = lambda t: -2.0 * cos(theta) * c2l(0,t)
-			f2 = lambda t: r1p(t)**2.0 - I(t)**2.0 - r2p(t)**2.0
+			f0 = lambda t: 2.0 * (1.0 - cos(theta(t)) * c2l(1,t))
+			f1 = lambda t: -2.0 * cos(theta(t)) * c2l(0,t)
+			f2 = lambda t: r2p(t)**2.0 - I(t)**2.0 - r1p(t)**2.0
 			n, p = quadratic(f0, f1, f2)
 			# Only use the positive solution TODO: is this right?
 			#solution = [n,p]
@@ -276,14 +261,13 @@ class wave:
 
 	# The radius perpendicular to the form at time T
 	def R(self, T):
-		# Reject back up from the projection solution
-		D = 0.0 if self.D[0] == None else magnitude(self.D[0](T))
-		Cp = self.C(T)[0]
-		c1 = abs(D**2.0 + Cp**2.0) ** 0.5
-		# Calculate the wave radius
-		p1 = self.parents()[0]
-		r1 = p1.R(T)
-		return abs((r1 ** 2.0) - (c1 ** 2.0)) ** 0.5
+		# Find projected C and R
+		Cs = self.C(T)[0]
+		Rp = projectPOI(self.parents()[0].R,self.D[0])(T)
+		# Find radius
+		radius = abs((Rp ** 2.0) - (Cs ** 2.0)) ** 0.5
+		#print("RAD -- C -- Rp", radius, Cs, Rp)
+		return radius
 
 # Whether a time is within a span
 def inSpan(T, span, eps = EPS):
@@ -371,20 +355,22 @@ def window(p1, p2, d1, d2, MAX = 10.0):
 		clipped += [win]
 	return clipped
 
+def projectPOI(radius, poiNormal):
+	M = lambda v: magnitude(v)
+	sign = lambda t, R, D: 1.0 if R(t) > M(D(t)) else -1.0
+	Rp = lambda t, R, D: sign(t,R,D) * (abs(R(t)**2.0 - M(D(t))**2.0)**0.5)
+	projL = lambda t, R, D: R(t) if D == None else Rp(t, R, D)
+	return lambda t: projL(t, radius, poiNormal)
+
 #Zero when r1 + r2 = I or abs(r1 - r2) = I! (Prev: when r1 = c1)
 def rzero(wave):
 	# Initialize local names for variables
 	p1, p2 = wave.parents()
 	d1, d2 = wave.D
 	span = window(p1, p2, d1, d2)
-	# print("D1,D2:", d1, d2)
 	# Project waves onto the intersection subspace
-	# TODO: move POI projections to another function
-	sign = lambda t, R, D: 1.0 if R(t) > magnitude(D(t)) else -1.0
-	Rp = lambda t, R, D: sign(t,R,D) * (
-		abs(R(t)**2.0 - magnitude(D(t))**2.0)**0.5)
-	r1p = lambda t: p1.R(t) if d1 == None else Rp(t, p1.R, d1)
-	r2p = lambda t: p2.R(t) if d2 == None else Rp(t, p2.R, d2)
+	r1p = projectPOI(p1.R, d1)
+	r2p = projectPOI(p2.R, d2)
 	# Find point of interection between p1 and p2
 	p,n = (None, None)
 	fA, fB = (None, None)
@@ -521,19 +507,18 @@ class wavefront:
 					print("POTVRT:", w1.N(), w2.N())
 					m = wave(w1, w2, self.dim)
 					inf, sup = m.span
+					p1,p2 = m.parents()
+					r1p = projectPOI(p1.R, m.D[0])
+					r2p = projectPOI(p2.R, m.D[1])
+					theta = m.theta
+					cos = math.cos
 					print("Span inf sup", inf, sup)
-					print("t1,t2",m.t1(inf), m.t2(inf))
-					print("t1,t2",m.t1n(inf), m.t2n(inf))
-					print("Cinf",m.C(inf,clamp = False))
-					if not sup == None:
-						print("Csup",
-							m.C(sup,clamp = False))
-					print("Th:",m.theta(inf))
+					if not inf == None:
+						print("Th:",m.theta(inf))
 					if not m.valid():
 						print("INVALID!")
 					else:
 						print("VRT:",m,m.span)
-					p1,p2 = m.parents()
 					print(waveID(self,p1), waveID(self,p2))
 					# Add debug vectors to parent(s)
 					l1 = lambda t: p1.L(t, clamp = False)
@@ -546,18 +531,27 @@ class wavefront:
 						p2.C(t, clamp = False)[0])
 					s = m.span
 					# DEBUG SETUP
-					self.debug.append(debugvec(s,(l1,d1)))
-					self.debug.append(debugvec(s,(l2,d2)))
-					self.debug.append(debugvec(s,(l1,m.I)))
+					# self.debug.append(debugvec(s,(l1,m.x1)))
+					#self.debug.append(debugvec(s,(l2,d2)))
+					#self.debug.append(debugvec(s,(l1,m.I)))
+					self.debug.append(debugvec(s,(l2,lambda t: vec(m.x2p(t), m.x1p(t)))))
 					# DEBUG EXECUTION
-					lr = lambda t: toSize(m.P(t)[0],
-						m.C(t, clamp = False)[0])
-					lrn = lambda t: norm(m.P(t)[0])
-					lm = lambda t: m.L(t, clamp = False)
+					lr1 = lambda t: toSize(m.P(t)[0],
+						p1.R(t))
+					lr2 = lambda t: toSize(m.P(t)[1],
+						-1.0 * p2.R(t))
 					v1 = lambda t: m.P(t)[0]
 					v2 = lambda t: m.P(t)[1]
+					Cm = lambda t: toSize(m.P(t)[0], m.C(t)[0])
+					lm = lambda t: vec(l1(T), m.L(T,False))
 					# DEBUG ATTACH
-					self.debug.append(debugvec(s,(l1,lambda t: vec(l1(t),lm(t)))))
+					#self.debug.append(debugvec(s,(l1,lambda t: vec(l1(t),lm(t)))))
+					self.debug.append(debugvec(s,(l1,Cm)))
+					#self.debug.append(debugvec(s,(l1,v1)))
+					#self.debug.append(debugvec(s,(l2,v2)))
+					#self.debug.append(debugvec(s,(l1,lm)))
+					#self.debug.append(debugvec(s,(l1,lr1)))
+					#self.debug.append(debugvec(s,(l2,lr2)))
 					continue
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue

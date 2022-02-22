@@ -329,6 +329,7 @@ class VoronoiVis(ShowBase):
 		w = self.wave[-1][0]
 		T = self.T['value']
 		print("------- WAVE DIAGNOSTIC ------")
+		print("Time", T)
 		print("Wave", w, voronoi.waveID(self.wavefront,w))
 		print("C:", w.C(T, clamp = False))
 		print("L:", w.L(T, clamp = False))
