@@ -9,7 +9,7 @@ from numpy.polynomial import Polynomial as poly
 
 # Globals are bad, but hey...
 EPS = 0.001
-BOUND = 10.0
+BOUND = 100.0
 
 # The form determines what the (hyper)plane of intersection is, and its
 # orthogonal directions and weights
@@ -334,11 +334,11 @@ def clipWindow(p, d, window):
 	return window, hasClip
 
 # Each window is the location of a potential minimum
-def window(p1, p2, d1, d2, MAX = 10.0):
+def window(p1, p2, d1, d2, bound = BOUND):
 	inf1 = p1.span[0]
-	sup1 = MAX if p1.span[1] == None else p1.span[1]
+	sup1 = bound if p1.span[1] == None else p1.span[1]
 	inf2 = p2.span[0]
-	sup2 = MAX if p2.span[1] == None else p2.span[1]
+	sup2 = bound if p2.span[1] == None else p2.span[1]
 	inf = max([inf1, inf2])
 	sup = min([sup1, sup2])
 	m1 = None if p1.span[1] == None else (p1.span[0] + p1.span[1]) / 2.0
@@ -384,7 +384,6 @@ def rzero(wave):
 		mx = lambda t: r1p(t)**2.0 + r2p(t)**2.0
 		cosR = lambda t: 2.0 * r1p(t) * r2p(t) * math.cos(wave.T(t))
 		n = lambda t: mx(t) - cosR(t) - (I(t)**2.0)
-		#p = lambda t: mx(t) - cosR(t,cT) - (I(t)**2.0)
 		p = None
 
 	# For each possible root do root finding
@@ -397,6 +396,12 @@ def rzero(wave):
 		if not p == None and p(inf) * p(sup) < 0.0:
 			r2 = solve(p, a = inf, b = sup)
 			roots.append(r2)
+	if not wave.C2L == None:
+		print("PARSPAN", p1.span, p2.span)
+		print("ROOTS!",roots, inf, sup, n(inf), n(sup))
+		for x in range(100):
+			pl = inf + ((sup - inf)*x / 100.0)
+			#print(pl, n(pl), p(pl))
 	return roots
 
 def waveEq(w1, w2):
