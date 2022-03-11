@@ -19,6 +19,25 @@ def formDir(dirs, N):
 	if magnitude(ret) < EPS: return ret
 	return scale(ret, 1.0 / magnitude(ret))
 
+# A subspace 
+class subspace:
+	def __init__(self, space, eps = EPS):
+		self.vec, self.basis = self.cleanInit(space, eps)
+		self.dim = len(self.vec)
+	# Clean and initialize the space, calculate orthonormal basis
+	def cleanInit(self, space, eps):
+		# Clean zero vectors
+		nozero = [s for s in space if magnitude(s) > eps]
+		if len(nozero) == 0: return [], []
+		vec, basis = [nozero[0]], [norm(nozero[0])]
+		for x in range(1,len(nozero)):
+			rej = reject(basis,[nozero[x]])[0]
+			if magnitude(rej) > eps:
+				vec.append(nozero[x])
+				basis.append(norm(rej))
+		return vec, basis
+	def dim(self): return self.dim
+
 class form:
 	def __init__(self, center, I, p = None):
 		if center == None:
@@ -29,28 +48,31 @@ class form:
 		v = None
 		for x in wvec: v = vsum(x, v)
 		self.X = norm(v)
-		form = I if p == None else span([I] + p[0].dir, p[1].dir)
-		self.dir = form
-		self.dim = len(self.dir)
+		space = [I] if p == None else [I] + p[0].dir + p[1].dir
+		self.space = subspace(space)
+		self.dir = self.space.vec
+		self.dim = self.space.dim
 
 	def N(self): return self.dim
 	# To make the orthogonal dual do a series of rejections
 	# Rejections maintain orthogonality over orthogonal bases
-	def comp(self, compN):
+	def comp(self, compN, eps = EPS):
 		N = self.N()
 		comp = []
 		i = 0
 		while len(comp) < compN and i < N:
-			nxt = reject(self.dir + comp, [hat(compN,i)])[0]; i += 1
-			if magnitude(nxt) < 0.01: continue
+			ih = [hat(compN,i)]
+			nxt = reject(self.space.basis + comp, ih)[0]
+			i += 1
+			if magnitude(nxt) < eps: continue
 			comp.append(norm(nxt))
 		return comp		
 
 def interPlane(f1, f2):
-	print("INTERPLANE",f1.N(), f2.N())
+	#print("INTERPLANE",f1.N(), f2.N())
 	x1, x2 = (f1.X, f2.X)
 	r1, r2 = (reject([x1],[x2]), reject([x2],[x1]))
-	return span(r1, r2)
+	return subspace(r1 + r2)
 
 # Strategy: find subspace of intersection, project X's onto it, find R's
 def formInter(f1, f2):
@@ -98,8 +120,6 @@ class wave:
 		self.p2 = p2
 		self.P, self.T, self.I, self.D, self.C2L = self.interInit(N)
 		self.span, self.center, self.val = self.spanInit()
-		#TODO: BETTER DEBUG
-		#TODO: BETTER DEBUG
 		# TODO: split into function
 		if self.val:
 			#print("CENTER!", self.span, self.center)
@@ -137,7 +157,8 @@ class wave:
 			return self.interInitNxN(p1, p2, c1, c2, f1, f2)
 
 	# Base degenerate case of two undirected wavefronts
-	# The intersection plane is 1D and there are no D vectors
+	# The intersection plane is 1D
+	# The POI intersects both parent centers
 	def interInit0x0(self, c1, c2):
 		Iv = lambda T: vec(c1, c2)
 		Is = lambda T: magnitude(Iv(T))
@@ -148,7 +169,9 @@ class wave:
 		return P, theta, Iv, D, C2L
 
 	# Partial case of one directed and one undirected wavefront
-	# In this case, the intersection plane is 1D but there is one D vector
+	# In this case, the intersection plane is 1D
+	# But the POI does not intersect both parent centers
+	# Only case with D vectors TODO: polish
 	def interInit0xN(self, p1, p2, c1, c2, f1, f2):
 		# Xp, the centers of each wave (lambdas)
 		x1p, x2p = (self.x1p, self.x2p)
@@ -170,33 +193,34 @@ class wave:
 		return P, theta, Ip, D, C2L
 
 	# Full case of two directed wavefronts
-	# In this case the intersection plane is 2D and there are two D vectors
+	# In this case the intersection plane is 2D
+	# The POI intersects both parent centers
 	def interInitNxN(self, p1, p2, c1, c2, f1, f2):
-		# Plane intersection calculation, TODO: move to other function
+		# Calculate intersection plane
 		P = interPlane(f1, f2)
-		x1 = norm(project(P, [f1.X])[0])
-		x2 = norm(project(P, [f2.X])[0])
-		x1p = lambda T: project(P, [p1.L(T, clamp = False)])[0]
-		x2p = lambda T: project(P, [p2.L(T, clamp = False)])[0]
+		# Calculate projections
+		x1 = norm(f1.X)
+		x2 = norm(f2.X)
+		x1p = lambda T: p1.L(T, clamp = False)
+		x2p = lambda T: p2.L(T, clamp = False)
 		I = lambda T: vec(x1p(T), x2p(T))
-		d1 = lambda T: reject(P, [p1.L(T, clamp = False)])[0]
-		d2 = lambda T: reject(P, [p2.L(T, clamp = False)])[0]
-		# Calculate angles (exterior or interior)
-		t1a = lambda T: angle(P[0], vec(x1p(T),x2p(T)))
-		t2a = lambda T: angle(P[1], vec(x2p(T),x1p(T)))
-		# Ensure the angle is interior and not exterior angle
+		d1, d2 = None, None
+		# Calculate raw angles (exterior or interior)
+		t1a = lambda T: angle(P.vec[0], vec(x1p(T),x2p(T)))
+		t2a = lambda T: angle(P.vec[1], vec(x2p(T),x1p(T)))
+		# Ensure the angle is interior
 		hC = lambda th, T: th(T) < (math.pi / 2.0)
 		rC = lambda th, T: math.pi - th(T)
 		interior = lambda th, T: th(T) if hC(th,T) else rC(th,T)
-		# Final angle lambdas
+		# Calculate final angle lambdas
 		t1 = lambda T: interior(t1a,T)
 		t2 = lambda T: interior(t2a,T)
 		Th = lambda T: math.pi - (t1(T) + t2(T))
 		# Parameterize C2 in terms of C1
 		sin = lambda th: math.sin(th)
 		C2L = (lambda T: 0.0, lambda T: sin(t1(T)) / sin(t2(T)))
-		# Store the plane of intersection
-		Pl = lambda T: P
+		# Store the plane of intersection TODO: polish
+		Pl = lambda T: P.vec
 		# Return the setup information
 		return Pl, Th, I, (d1, d2), C2L
 
@@ -244,9 +268,12 @@ class wave:
 			f1 = lambda t: -2.0 * cos(theta(t)) * c2l(0,t)
 			f2 = lambda t: r2p(t)**2.0 - I(t)**2.0 - r1p(t)**2.0
 			n, p = quadratic(f0, f1, f2)
-			# Only use the positive solution TODO: is this right?
+			# Use the solution that matches I
+			sign = lambda t: dot(self.I(t),self.P(t)[0])
+			signed = lambda t: n(t) if sign(t) < 0.0 else p(t)
+			# TODO: need to use negative when appropriate?
 			#solution = [n,p]
-			solution = [p]
+			solution = [signed]
 		# We only use the smallest solution TODO: possible NxN bug here
 		sol = sorted([s(T) for s in solution])
 		return sol
@@ -279,8 +306,9 @@ def clampSpan(wave, T, eps = EPS):
 	if (T + EPS) < wave.span[0]:
 		return [0.0], True
 	if (T - EPS) > wave.span[1]:
-		# TODO: potential bug here, need to calculate with D
-		print("Potential Bug!")
+		# TODO: potential bug here
+		# TODO: fix by clamping spans in windowing, not selection
+		print("Potential bug! Need better span clamps...")
 		return [magnitude(vec(wave.center[0], wave.center[1]))], True
 	return None, False
 
@@ -418,11 +446,22 @@ def hasParent(w1,w2):
 	return ret
 
 def waveSibling(wave, w1, w2):
+	# If their IDs share a number
+	id1, id2 = waveID(wave, w1), waveID(wave,w2)
+	isSibling = False
+	for x in id1:
+		if x in id2:
+			isSibling = True
+			break
+	return isSibling
+	# TODO: is this old way the correct one?
+	'''
 	for w in [x for x in wave if not x.leaf()]:
 		l, r = w.parents()
 		if l == w1 and r == w2: return True
 		if r == w1 and l == w2: return True
 	return hasParent(w1,w2) or hasParent(w2,w1)
+	'''
 
 # Debug vectors to print
 class debugvec:
@@ -479,6 +518,7 @@ class wavefront:
 			self.nextID += 1
 		else:
 			self.ids[wave] = waveID(self,wave)
+	def widList(self): return [x for x in self.ids.values()]
 	def popWave(self): self.wave.pop()
 	# Return all waves active at t = T
 	def cut(self, T):
@@ -497,15 +537,15 @@ class wavefront:
 		overcache = []
 		for w1 in self.wave:
 			for w2 in self.wave:
-				#print(w1.N(),w2.N())
-				# Wave siblings have already intersected
-				if waveSibling(self.wave, w1, w2): continue
-				# Waves need to span space to intersect
-				if w1.N() + w2.N() < self.dim - 1: continue
 				# ID candidates to prevent overlapp.
 				wid = waveID2(self, w1, w2)
 				if waveIDIN(overcache, wid): continue
+				if waveIDIN(self.widList(), wid): continue
 				else: overcache.append(wid)
+				# Wave siblings have already intersected
+				if waveSibling(self, w1, w2): continue
+				# Waves need to span space to intersect
+				if w1.N() + w2.N() < self.dim - 1: continue
 				# Waves that barely span space make a vertex
 				if w1.N() + w2.N() == self.dim - 1:
 					# TODO: Vertex intersections!
@@ -526,37 +566,7 @@ class wavefront:
 						print("VRT:",m,m.span)
 					print(waveID(self,p1), waveID(self,p2))
 					# Add debug vectors to parent(s)
-					l1 = lambda t: p1.L(t, clamp = False)
-					l2 = lambda t: p2.L(t, clamp = False)
-					d1 = lambda t: m.D[0](t)
-					d2 = lambda t: m.D[1](t)
-					c1 = lambda t: toSize(p1.P(t)[0],
-						p1.C(t, clamp = False)[0])
-					c2 = lambda t: toSize(p2.P(t)[0],
-						p2.C(t, clamp = False)[0])
 					s = m.span
-					# DEBUG SETUP
-					# self.debug.append(debugvec(s,(l1,m.x1)))
-					#self.debug.append(debugvec(s,(l2,d2)))
-					#self.debug.append(debugvec(s,(l1,m.I)))
-					self.debug.append(debugvec(s,(l2,lambda t: vec(m.x2p(t), m.x1p(t)))))
-					# DEBUG EXECUTION
-					lr1 = lambda t: toSize(m.P(t)[0],
-						p1.R(t))
-					lr2 = lambda t: toSize(m.P(t)[1],
-						-1.0 * p2.R(t))
-					v1 = lambda t: m.P(t)[0]
-					v2 = lambda t: m.P(t)[1]
-					Cm = lambda t: toSize(m.P(t)[0], m.C(t)[0])
-					lm = lambda t: vec(l1(T), m.L(T,False))
-					# DEBUG ATTACH
-					#self.debug.append(debugvec(s,(l1,lambda t: vec(l1(t),lm(t)))))
-					self.debug.append(debugvec(s,(l1,Cm)))
-					#self.debug.append(debugvec(s,(l1,v1)))
-					#self.debug.append(debugvec(s,(l2,v2)))
-					#self.debug.append(debugvec(s,(l1,lm)))
-					#self.debug.append(debugvec(s,(l1,lr1)))
-					#self.debug.append(debugvec(s,(l2,lr2)))
 					continue
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue
@@ -586,6 +596,7 @@ def magnitude(vector):
 	return dot(vector, vector) ** 0.5
 
 def scale(vector, scale):
+	if vector == None: return vector
 	return [x * scale for x in vector]
 
 def toSize(vector, size):
@@ -632,7 +643,7 @@ def project(basis, vector):
 		ret.append(proj)
 	return ret
 
-# Reject from a subspace onto another subspace TODO: linear dependence?
+# Reject from a subspace onto another subspace
 def reject(basis, vector):
 	if basis == None or len(basis) == 0 or len(vector) == 0: return vector
 	projection = project(basis, vector)
@@ -641,14 +652,6 @@ def reject(basis, vector):
 # Find the union of two (sub)spaces
 def span(s1, s2, eps = EPS): return clean(s1 + s2, eps)
 
-# clean a space by removing linearly dependent vectors
-def clean(space, eps = EPS):
-	if len(space) < 2: return [norm(s) for s in space if magnitude(s)>EPS]
-	ret = []
-	for vec in space:
-		if magnitude(reject(ret, [norm(vec)])[0]) > eps:
-			ret.append(norm(vec))
-	return ret
 
 if __name__ == "__main__":
 	# The points for the voronoi cells!
