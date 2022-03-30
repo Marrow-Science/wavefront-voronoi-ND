@@ -37,6 +37,11 @@ class subspace:
 				basis.append(norm(rej))
 		return vec, basis
 	def dim(self): return self.dim
+	def X(self):
+		ret = None
+		for x in self.vec:
+			ret = vsum(x,ret)
+		return ret
 
 class form:
 	def __init__(self, center, I, p = None):
@@ -196,18 +201,23 @@ class wave:
 	# In this case the intersection plane is 2D
 	# The POI intersects both parent centers
 	def interInitNxN(self, p1, p2, c1, c2, f1, f2):
-		# Calculate intersection plane
-		P = interPlane(f1, f2)
-		# Calculate projections
-		x1 = norm(f1.X)
-		x2 = norm(f2.X)
+		# Calculate I
 		x1p = lambda T: p1.L(T, clamp = False)
 		x2p = lambda T: p2.L(T, clamp = False)
 		I = lambda T: vec(x1p(T), x2p(T))
+		Ir = lambda T: vec(x2p(T), x1p(T))
+		# The POI must have a vector which is orth to both x1 and x2
+		orthP = interPlane(f1, f2)
+		Ip = lambda T: project(orthP.basis,[I(T)])[0]
+		H = lambda T: reject([Ip(T)],[orthP.X()])[0]
+		P = lambda T: orthP
+		# Calculate projections
+		x1 = lambda T: norm(project(P(T).basis,[f1.X])[0])
+		x2 = lambda T: norm(project(P(T).basis,[f2.X])[0])
 		d1, d2 = None, None
 		# Calculate raw angles (exterior or interior)
-		t1a = lambda T: angle(P.vec[0], vec(x1p(T),x2p(T)))
-		t2a = lambda T: angle(P.vec[1], vec(x2p(T),x1p(T)))
+		t1a = lambda T: angle(x1(T), I(T))
+		t2a = lambda T: angle(x2(T), Ir(T))
 		# Ensure the angle is interior
 		hC = lambda th, T: th(T) < (math.pi / 2.0)
 		rC = lambda th, T: math.pi - th(T)
@@ -220,8 +230,16 @@ class wave:
 		sin = lambda th: math.sin(th)
 		C2L = (lambda T: 0.0, lambda T: sin(t1(T)) / sin(t2(T)))
 		# Store the plane of intersection TODO: polish
-		Pl = lambda T: P.vec
+		Pl = lambda T: P(T).vec
 		# Return the setup information
+		self.x1 = lambda T: f1.X
+		self.x2 = lambda T: f2.X
+		self.xp1 = lambda T: x1(T)
+		self.xp2 = lambda T: x2(T)
+		self.v1 = lambda T: P(T).basis[0]
+		self.v2 = lambda T: P(T).basis[1]
+		self.Ip = Ip
+		self.H = H
 		return Pl, Th, I, (d1, d2), C2L
 
 	def spanInit(self):
@@ -424,12 +442,10 @@ def rzero(wave):
 		if not p == None and p(inf) * p(sup) < 0.0:
 			r2 = solve(p, a = inf, b = sup)
 			roots.append(r2)
-	if not wave.C2L == None:
+	#TODO: remove debug statements
+	if p1.N() + p2.N() == 2:
 		print("PARSPAN", p1.span, p2.span)
 		print("ROOTS!",roots, inf, sup, n(inf), n(sup))
-		for x in range(100):
-			pl = inf + ((sup - inf)*x / 100.0)
-			#print(pl, n(pl), p(pl))
 	return roots
 
 def waveEq(w1, w2):
@@ -508,7 +524,9 @@ class wavefront:
 		for point, weight in zip(self.point, self.weight):
 			self.addWave(baseWave(point,weight,self.dim))
 	def N(self): return self.dim
+	# Add the specified wave to the wavefront, return if it was a success
 	def addWave(self,wave):
+		if wave == None: return False
 		if not wave.debug == None:
 			for vec in wave.debug:
 				self.debug.append(debugvec(wave.span,vec))
@@ -518,6 +536,7 @@ class wavefront:
 			self.nextID += 1
 		else:
 			self.ids[wave] = waveID(self,wave)
+		return True
 	def widList(self): return [x for x in self.ids.values()]
 	def popWave(self): self.wave.pop()
 	# Return all waves active at t = T
@@ -528,7 +547,6 @@ class wavefront:
 			if T > s[0] and (s[1] == None or T < s[1]):
 				ret.append(wave)
 		return ret
-	# TODO: make this recognize lower-form collisions
 	# TODO: need massive speedups (Don't compare all waves baka!)
 	def nextCollision(self):
 		col = None
@@ -541,15 +559,22 @@ class wavefront:
 				wid = waveID2(self, w1, w2)
 				if waveIDIN(overcache, wid): continue
 				if waveIDIN(self.widList(), wid): continue
-				else: overcache.append(wid)
+				else:
+					special = (w1.N() == 2 and w2.N() == 0) or (w1.N() == 0 and w2.N() == 2)
+					if not special:
+						overcache.append(wid)
 				# Wave siblings have already intersected
 				if waveSibling(self, w1, w2): continue
 				# Waves need to span space to intersect
 				if w1.N() + w2.N() < self.dim - 1: continue
 				# Waves that barely span space make a vertex
 				if w1.N() + w2.N() == self.dim - 1:
+					print(w1.N(), w2.N())
+					if not (w1.N() == 1 and w2.N() == 1):
+						continue
 					# TODO: Vertex intersections!
 					print("POTVRT:", w1.N(), w2.N())
+					print("WIDS",self.ids[w1],self.ids[w2])
 					m = wave(w1, w2, self.dim)
 					inf, sup = m.span
 					p1,p2 = m.parents()
@@ -558,6 +583,10 @@ class wavefront:
 					theta = m.theta
 					cos = math.cos
 					print("Span inf sup", inf, sup)
+					print("D", m.D)
+					print("Pang", angle(m.v1(inf),m.v2(inf)))
+					print("X1ang", angle(m.x1(inf),m.xp1(inf)))
+					print("X2ang", angle(m.x2(inf),m.xp2(inf)))
 					if not inf == None:
 						print("Th:",m.theta(inf))
 					if not m.valid():
@@ -566,7 +595,26 @@ class wavefront:
 						print("VRT:",m,m.span)
 					print(waveID(self,p1), waveID(self,p2))
 					# Add debug vectors to parent(s)
+					# TODO: SIGH this is still borked >->
 					s = m.span
+					s1 = p1.span
+					s2 = p2.span
+					c1 = lambda t: p1.L(t)
+					c2 = lambda t: p2.L(t)
+					l1 = lambda t: vec(c1(t),c2(t))
+					l2 = lambda t: vec(c2(t),c1(t))
+					cD = lambda t: vsum(c1(t),scale(l1(t),0.5))
+					self.debug = []
+					self.debug.append(debugvec(s1,(c1,l1)))
+					#self.debug.append(debugvec(s2,(c2,l2)))
+					self.debug.append(debugvec(s1,(c1,m.x1)))
+					self.debug.append(debugvec(s2,(c2,m.x2)))
+					self.debug.append(debugvec(s1,(c1,m.xp1)))
+					self.debug.append(debugvec(s2,(c2,m.xp2)))
+					self.debug.append(debugvec(s1,(cD,m.H)))
+					self.debug.append(debugvec(s1,(cD,m.Ip)))
+					self.debug.append(debugvec(s1,(cD,m.v1)))
+					self.debug.append(debugvec(s1,(cD,m.v2)))
 					continue
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue
@@ -618,7 +666,14 @@ def dot(head, tail):
 	return dot
 
 def angle(head, tail):
-	return math.acos(cosangle(head, tail))
+	cosang = cosangle(head,tail)
+	if cosang > 1.0:
+		print("Cosangle Innacuracy", cosang)
+		cosang = 1.0
+	if cosang < -1.0:
+		print("Cosangle Inaccuracy", cosang)
+		cosang = -1.0
+	return math.acos(cosang)
 
 def cosangle(head, tail, eps = EPS):
 	if magnitude(head) * magnitude(tail) < eps: return 0.0

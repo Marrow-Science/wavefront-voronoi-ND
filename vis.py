@@ -296,13 +296,11 @@ class VoronoiVis(ShowBase):
 
 	def addWave(self):
 		nw = self.wavefront.nextCollision()
-		if not nw == None: self.wavefront.addWave(nw)
-		self.updateWavefront()
-		#for i,vec in enumerate(debugVectors(nw)):
-		#	handle = self.debugNode(-1 * i)
-		#	self.debug.append((vec, handle))
-		debugPrint(self.wavefront, nw)
-		self.show()
+		if self.wavefront.addWave(nw):
+			debugPrint(self.wavefront, nw)
+			self.updateWavefront()
+			self.show()
+		else: print("--NO NEW WAVE---")
 
 	def removeWave(self):
 		self.wavefront.popWave()
@@ -422,6 +420,8 @@ class VoronoiVis(ShowBase):
 				h.hide()
 				continue
 			else: h.show()
+			# TODO: remove
+			if w.N() == 2: h.hide()
 			N = w.N()
 			center = w.L(T)
 			p1, p2 = (None,None)
@@ -477,7 +477,6 @@ def drawwaves(root, canvas, scale, WF):
 	for wave in WF.cut(time):
 		center = wave.center[0]
 		canvas.create_oval(canvCoords(center), fill = "red")
-
 		delR = wave.R(time)
 		canvas.create_oval(canvCoords(center, delR))
 
@@ -572,7 +571,7 @@ if __name__ == "__main__":
 
 	#data = [[2.0,3.0,0.0],[-1.0,0.0,2.0],[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
 	#weight = [1.0, 2.5, 2.0, 2.1]
-	data = [[5.0,1.5,5.0],[0.0,5.0,0.0],[0.0,0.0,3.0],[5.0,0.0,0.0]]
+	data = [[4.5,1.75,5.0],[0.0,5.5,0.0],[0.0,0.05,3.05],[5.75,0.0,0.0]]
 	#data = [[3.0,0.0,0.0],[0.0,3.0,0.0],[0.0,3.0,5.0],[3.0,0.0,5.0]]
 	weight = [2.5, 2.0, 2.01, 2.2]
 	#data = [[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
