@@ -44,6 +44,8 @@ class subspace:
 		return ret
 
 class form:
+	# TODO: Forms needs to take a centerline and build around an X vector
+	# TODO: Forms need linear dependence code
 	def __init__(self, center, I, p = None):
 		if center == None:
 			print("NO CENTER!", base, center)
@@ -125,23 +127,20 @@ class wave:
 		self.p2 = p2
 		self.P, self.T, self.I, self.D, self.C2L = self.interInit(N)
 		self.span, self.center, self.val = self.spanInit()
-		# TODO: split into function
-		if self.val:
-			#print("CENTER!", self.span, self.center)
-			start = self.span[0]
-			center = self.center[0]
-			I = [vec(p1.x1p(start), center)]
-			I = project(self.P(start), [self.I(start)])
-			#I = self.P(self.span[0])
-			I = norm(self.I(self.span[0]))
-			self.form = form(center, I, (p1.form, p2.form))
-			#print("BASE", self.form.base, self.center)
-			self.dim = N - self.form.N() - 1
-			#print("FORM DIMS:", N, self.form.N(), self.dim)
-			# TODO: Uhhh, this may be incorrect?
-			if not(self.dim == p1.dim-1 or self.dim == p2.dim-1):
-				self.val = False
-		else: self.dim = N - 1
+		# If the initialization is not valid just leave
+		if not self.val: return
+		# Otherwise the span is valid
+		'''
+		#TODO: better centerline handling for 4D+.
+		Needs I to be between span[0] and span[1], make X direct from
+		'''
+		start = self.span[0]
+		center = self.center[0]
+		I = norm(self.I(self.span[0]))
+		''''''
+		self.form = form(center, I, (p1.form, p2.form))
+		self.dim = N - (self.form.N() + 1)
+		self.val = True
 	# Init various intersection values needed to calculate the waveform
 	def interInit(self, N, eps = EPS):
 		# Local variable initialization
@@ -206,11 +205,11 @@ class wave:
 		x2p = lambda T: p2.L(T, clamp = False)
 		I = lambda T: vec(x1p(T), x2p(T))
 		Ir = lambda T: vec(x2p(T), x1p(T))
-		# The POI must have a vector which is orth to both x1 and x2
+		# The POI is defined by I and parent forms
 		orthP = interPlane(f1, f2)
 		Ip = lambda T: project(orthP.basis,[I(T)])[0]
 		H = lambda T: reject([Ip(T)],[orthP.X()])[0]
-		P = lambda T: orthP
+		P = lambda T: subspace([I(T),H(T)])
 		# Calculate projections
 		x1 = lambda T: norm(project(P(T).basis,[f1.X])[0])
 		x2 = lambda T: norm(project(P(T).basis,[f2.X])[0])
@@ -221,10 +220,10 @@ class wave:
 		# Ensure the angle is interior
 		hC = lambda th, T: th(T) < (math.pi / 2.0)
 		rC = lambda th, T: math.pi - th(T)
-		interior = lambda th, T: th(T) if hC(th,T) else rC(th,T)
+		interior = lambda th, T: rC(th,T) if hC(th,T) else th(T)
 		# Calculate final angle lambdas
-		t1 = lambda T: interior(t1a,T)
-		t2 = lambda T: interior(t2a,T)
+		t1 = lambda T: interior(t1a,T) - (math.pi / 2.0)
+		t2 = lambda T: interior(t2a,T) - (math.pi / 2.0)
 		Th = lambda T: math.pi - (t1(T) + t2(T))
 		# Parameterize C2 in terms of C1
 		sin = lambda th: math.sin(th)
@@ -232,12 +231,14 @@ class wave:
 		# Store the plane of intersection TODO: polish
 		Pl = lambda T: P(T).vec
 		# Return the setup information
-		self.x1 = lambda T: f1.X
-		self.x2 = lambda T: f2.X
-		self.xp1 = lambda T: x1(T)
-		self.xp2 = lambda T: x2(T)
+		self.x1 = lambda T: x1(T)
+		self.x2 = lambda T: x2(T)
 		self.v1 = lambda T: P(T).basis[0]
 		self.v2 = lambda T: P(T).basis[1]
+		self.t1a = t1a
+		self.t2a = t2a
+		self.t1 = t1
+		self.t2 = t2
 		self.Ip = Ip
 		self.H = H
 		return Pl, Th, I, (d1, d2), C2L
@@ -565,6 +566,7 @@ class wavefront:
 						overcache.append(wid)
 				# Wave siblings have already intersected
 				if waveSibling(self, w1, w2): continue
+				# PRINT WAVE PLUS
 				# Waves need to span space to intersect
 				if w1.N() + w2.N() < self.dim - 1: continue
 				# Waves that barely span space make a vertex
@@ -576,6 +578,7 @@ class wavefront:
 					print("POTVRT:", w1.N(), w2.N())
 					print("WIDS",self.ids[w1],self.ids[w2])
 					m = wave(w1, w2, self.dim)
+					print("WAVE DIMS", w1.N(), w2.N(), m.N())
 					inf, sup = m.span
 					p1,p2 = m.parents()
 					r1p = projectPOI(p1.R, m.D[0])
@@ -584,11 +587,12 @@ class wavefront:
 					cos = math.cos
 					print("Span inf sup", inf, sup)
 					print("D", m.D)
-					print("Pang", angle(m.v1(inf),m.v2(inf)))
-					print("X1ang", angle(m.x1(inf),m.xp1(inf)))
-					print("X2ang", angle(m.x2(inf),m.xp2(inf)))
 					if not inf == None:
 						print("Th:",m.theta(inf))
+						print("t1:",m.t1(inf))
+						print("t2:",m.t2(inf))
+						print("t1a:",m.t1a(inf))
+						print("t2a:",m.t2a(inf))
 					if not m.valid():
 						print("INVALID!")
 					else:
@@ -604,17 +608,17 @@ class wavefront:
 					l1 = lambda t: vec(c1(t),c2(t))
 					l2 = lambda t: vec(c2(t),c1(t))
 					cD = lambda t: vsum(c1(t),scale(l1(t),0.5))
+					x1 = m.x1
+					x2 = m.x2
 					self.debug = []
+					# X's
+					self.debug.append(debugvec(s1,(c1,x1)))
+					self.debug.append(debugvec(s2,(c2,x2)))
+					# I debug
 					self.debug.append(debugvec(s1,(c1,l1)))
-					#self.debug.append(debugvec(s2,(c2,l2)))
-					self.debug.append(debugvec(s1,(c1,m.x1)))
-					self.debug.append(debugvec(s2,(c2,m.x2)))
-					self.debug.append(debugvec(s1,(c1,m.xp1)))
-					self.debug.append(debugvec(s2,(c2,m.xp2)))
-					self.debug.append(debugvec(s1,(cD,m.H)))
-					self.debug.append(debugvec(s1,(cD,m.Ip)))
 					self.debug.append(debugvec(s1,(cD,m.v1)))
 					self.debug.append(debugvec(s1,(cD,m.v2)))
+					self.debug.append(debugvec(s1,(cD,m.H)))
 					continue
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue
