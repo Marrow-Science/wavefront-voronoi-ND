@@ -32,9 +32,13 @@ Execute by using python3.
 # Command line arguments
 
 -o, --output	<filename> designate an output file
+
 -i, --input	<filename> designate an input file
+
 -b, --binary	use binary input/output encodings
+
 -v, --vis	run a panda3d visualization of the algorithm
+
 -h, --help	display a help message
 
 Without designated input and output files, inputs are read from stdin and
@@ -69,15 +73,17 @@ For example:
 ```
 
 Each vertex contains an ID, a location in space, a list of parent nodes,
-and an arc center for computing the full vertex subsurface.
+and an arc center plus form subspace for computing full vertex subsurfaces.
 IDs start with an exclamation point (!).
 Locations are space-separated.
 Parents are space-separated within brackets ([]).
 Arc center follows a "c=" and is contained in parentheses (()).
+Forms follow a "f=" and are a space-separated 2-d lists of vectors enclosed
+in brackets ([[][]]).
 For example:
 
 ```
-!12 2.0 1.0 3.0 [1 2] c=(2.0 3.0 1.0)
+!12 2.0 1.0 3.0 [1 2] c=(2.0 3.0 1.0) f=[[1.0 2.0 3.0] [3.0 2.0 1.0]]
 ```
 
 # Binary file format
