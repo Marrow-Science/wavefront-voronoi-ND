@@ -2,7 +2,7 @@
 
 The algorithm implementation is not yet finished,
 and will currently produce no output.
-This warning will be removed when implementation is finished.
+This warning will be removed when a stable implementation is complete.
 
 # wavefront-voronoi-ND
 
@@ -15,11 +15,79 @@ applications such as materials science and machine learning.
 # Dependencies
 
 The basic algorithm runs purely on python standard libraries.
-The visualization code (vis.py) depends on the ```Panda3d``` library
+The visualization code ```vis.py``` depends on the ```Panda3d``` library
 for 3d rendering (https://www.panda3d.org).
 Install this dependency using ```pip```:
 
 ```pip install panda3d```
+
+# Running
+
+```wevoNd.py``` contains a simple command-line runtime for the ```voronoi.py```
+library functions.
+Execute by using python3.
+
+```python3 wevoNd.py```
+
+# Command line arguments
+
+-o, --output	<filename> designate an output file
+-i, --input	<filename> designate an input file
+-b, --binary	use binary input/output encodings
+-v, --vis	run a panda3d visualization of the algorithm
+-h, --help	display a help message
+
+Without designated input and output files, inputs are read from stdin and
+outputs are printed to stdout.
+
+# Input file format
+
+Human-readable input consists of lines.
+Each line contains a space-seperated list of floats designating a point
+location, with an optional weight designated by a "w=".
+Points without a weight are assumed to have a weight of 1.0.
+Comments after a \# on a line are ignored.
+IDs may be manually set using an exclamation point (!).
+For example:
+
+```
+1.0 2.0 3.0 w=4.0
+3.0 2.0 1.0 w=2.0 #3D point at 3.0 2.0 1.0 with weight 2.0
+!Foo 2.0 3.0 1.0 #3D point at 2.0 3.0 1.0 with weight 1.0 and the ID "Foo"
+```
+
+# Output file format
+
+Human-readable output consists of a list of parent points with IDs
+followed by a list of verticies.
+Each parent consists of an ID followed by a point and then a weight.
+For example:
+
+```
+!1 1.0 2.0 3.0 w=4.0
+!2 2.0 3.0 4.0 w=2.0
+```
+
+Each vertex contains an ID, a location in space, a list of parent nodes,
+and an arc center for computing the full vertex subsurface.
+IDs start with an exclamation point (!).
+Locations are space-separated.
+Parents are space-separated within brackets ([]).
+Arc center follows a "c=" and is contained in parentheses (()).
+For example:
+
+```
+!12 2.0 1.0 3.0 [1 2] c=(2.0 3.0 1.0)
+```
+
+# Binary file format
+
+The library functions "readbinI" and "readbinO" reads binary input and output
+files into internal ```wavefront``` and ```partition``` objects.
+
+# Future work
+
+Stay tuned for an MPI implementation and further algorithm optimizations.
 
 # Love you!
 I hope you like it!

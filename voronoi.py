@@ -4,12 +4,18 @@ import scipy
 #from scipy.optimize import root_scalar as solve
 from scipy.optimize import brentq as solve
 from numpy.polynomial import Polynomial as poly
+# For pairs of points
+from itertools import combinations
 
 # We create a weighted Voronoi cell in ND using a wavefront algorithm
 
 # Globals are bad, but hey...
 EPS = 0.001
 BOUND = 100.0
+
+def kwargDef(arg, args, default):
+	if args.hasKey(arg): return args[arg]
+	else: return default
 
 # The form determines what the (hyper)plane of intersection is, and its
 # orthogonal directions and weights
@@ -18,6 +24,11 @@ def formDir(dirs, N):
 	for x in dirs: ret = vsum(ret, x)
 	if magnitude(ret) < EPS: return ret
 	return scale(ret, 1.0 / magnitude(ret))
+
+# The main algorithm, add new waves on each collision
+def runWevoNd(wavefront):
+	verticies = []
+	return partition(verticies)
 
 # A subspace 
 class subspace:
@@ -208,12 +219,19 @@ class wave:
 		# The POI is defined by I and parent forms
 		orthP = interPlane(f1, f2)
 		Ip = lambda T: project(orthP.basis,[I(T)])[0]
-		H = lambda T: reject([Ip(T)],[orthP.X()])[0]
+		H = lambda T: reject([I(T)],[orthP.X()])[0]
 		P = lambda T: subspace([I(T),H(T)])
 		# Calculate projections
 		x1 = lambda T: norm(project(P(T).basis,[f1.X])[0])
 		x2 = lambda T: norm(project(P(T).basis,[f2.X])[0])
 		d1, d2 = None, None
+		# Calculate Centerlines to make a clean POI
+		# TODO: move subspace calculations away from lambdas?
+		# TODO: potential bug here with negatives? Not sure.
+		# TODO: clean up angle code by using rejections instead
+		p1v = lambda T: norm(reject([x1(T)], [I(T)])[0])
+		p2v = lambda T: norm(reject([x2(T)], [Ir(T)])[0])
+		Pclean = lambda T: subspace([p1v(T),p2v(T)])
 		# Calculate raw angles (exterior or interior)
 		t1a = lambda T: angle(x1(T), I(T))
 		t2a = lambda T: angle(x2(T), Ir(T))
@@ -228,8 +246,8 @@ class wave:
 		# Parameterize C2 in terms of C1
 		sin = lambda th: math.sin(th)
 		C2L = (lambda T: 0.0, lambda T: sin(t1(T)) / sin(t2(T)))
-		# Store the plane of intersection TODO: polish
-		Pl = lambda T: P(T).vec
+		# Store the plane of intersection
+		Pl = lambda T: Pclean(T).vec
 		# Return the setup information
 		self.x1 = lambda T: x1(T)
 		self.x2 = lambda T: x2(T)
@@ -241,6 +259,8 @@ class wave:
 		self.t2 = t2
 		self.Ip = Ip
 		self.H = H
+		self.p1v = p1v
+		self.p2v = p2v
 		return Pl, Th, I, (d1, d2), C2L
 
 	def spanInit(self):
@@ -290,10 +310,7 @@ class wave:
 			# Use the solution that matches I
 			sign = lambda t: dot(self.I(t),self.P(t)[0])
 			signed = lambda t: n(t) if sign(t) < 0.0 else p(t)
-			# TODO: need to use negative when appropriate?
-			#solution = [n,p]
 			solution = [signed]
-		# We only use the smallest solution TODO: possible NxN bug here
 		sol = sorted([s(T) for s in solution])
 		return sol
 
@@ -301,7 +318,6 @@ class wave:
 	def L(self, T, clamp = True):
 		d = None if self.D[0] == None else self.D[0](T)
 		C = scale(self.P(T)[0], self.C(T, clamp)[0])
-		#return vsum(self.p1.center[0], vsum(d, C))
 		ret = vsum(self.p1.L(T, clamp), vsum(d, C))
 		return ret
 
@@ -312,8 +328,65 @@ class wave:
 		Rp = projectPOI(self.parents()[0].R,self.D[0])(T)
 		# Find radius
 		radius = abs((Rp ** 2.0) - (Cs ** 2.0)) ** 0.5
-		#print("RAD -- C -- Rp", radius, Cs, Rp)
 		return radius
+
+# A vertex of a cell, computed by either wave cessation or intersection
+# The set of all vertexes can be used to quickly reconstruct full cells
+class vertex:
+	def __init__(self, vertex, center, parents):
+		self.vertex = vertex
+		self.center = center
+		self.parent = parents
+
+# The voronoi partition is composed of all vertexes and their relationships
+class partition:
+	# The core part of the partition is a set of vertexes
+	def __init__(self, verticies, **kwargs):
+		# Limit the number of intersection combinations we can cache
+		self.intercachelimit = kwargDef("intercachelimit", kwargs, 100)
+		# Map for easy vertex relationships
+		self.intermap = {}
+		self.intermap[1] = {}
+		self.intermap[2] = {}
+		# Cells have one point in common, faces have two
+		self.cellmap = self.intermap[1]
+		self.facemap = self.intermap[2]
+		# Add all the verticies
+		for vrt in verticies: self.addVertex(vrt)
+			
+	# Cache cells and faces
+	def addVertex(self, vertex):
+		self.vertex.append(vertex)
+		self.interAllCache(vertex)
+
+	# Cache all combinations for this vertex
+	def interAllCache(self, vertex):
+		for N in range(1, len(vertex.parent)):
+			if not self.interNCache(vertex, N): return False
+		return True
+
+	# Create a map for every combination of points. Within reason.
+	def interNCache(self, vertex, N):
+		parent = vertex.parent
+		if not self.intermap.hasKey(N): self.intermap[N] = {}
+		numComb = 0
+		# Use a generator so our cache limit applies during computation
+		for faceID in combinations(parent,N):
+			numComb += 1
+			if numComb > self.intercachelimit: return False
+			if self.intermap[N].hasKey(faceID):
+				self.intermap[N].append(vertex)
+			else:
+				self.intermap[N] = [vertex]
+		return True
+		
+	# Faces and cells are pre-computed
+	def createFace(self, headID, tailID):
+		pass
+	def createCell(self, cellID):
+		pass
+	def createGraph(self, cellID):
+		pass
 
 # Whether a time is within a span
 def inSpan(T, span, eps = EPS):
@@ -509,10 +582,10 @@ def waveIDIN(overcache, wid):
 
 # A wavefront is composed of many waves
 class wavefront:
-	def __init__(self, points, weights):
+	def __init__(self, points, weights, ids={}):
 		self.point = points
 		self.weight = weights
-		self.dim = len(points[0])
+		self.dim = None
 		self.wave = []
 		self.debug = []
 		# Keep track of wave IDs for debug purposes
@@ -523,6 +596,10 @@ class wavefront:
 	def start(self):
 		self.wave = []
 		for point, weight in zip(self.point, self.weight):
+			# Ensure points are equidimensional
+			if self.dim == None: self.dim = len(point)
+			if not len(point) == self.dim: continue
+			# Add the wave
 			self.addWave(baseWave(point,weight,self.dim))
 	def N(self): return self.dim
 	# Add the specified wave to the wavefront, return if it was a success
@@ -607,7 +684,7 @@ class wavefront:
 					c2 = lambda t: p2.L(t)
 					l1 = lambda t: vec(c1(t),c2(t))
 					l2 = lambda t: vec(c2(t),c1(t))
-					cD = lambda t: vsum(c1(t),scale(l1(t),0.5))
+					cD = lambda t: m.L(T)
 					x1 = m.x1
 					x2 = m.x2
 					self.debug = []
@@ -615,10 +692,14 @@ class wavefront:
 					self.debug.append(debugvec(s1,(c1,x1)))
 					self.debug.append(debugvec(s2,(c2,x2)))
 					# I debug
+					
 					self.debug.append(debugvec(s1,(c1,l1)))
 					self.debug.append(debugvec(s1,(cD,m.v1)))
 					self.debug.append(debugvec(s1,(cD,m.v2)))
 					self.debug.append(debugvec(s1,(cD,m.H)))
+					# Ps
+					self.debug.append(debugvec(s1,(c1,m.p1v)))
+					self.debug.append(debugvec(s2,(c2,m.p2v)))
 					continue
 				merge = wave(w1, w2, self.dim)
 				if not merge.valid(): continue
