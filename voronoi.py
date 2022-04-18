@@ -14,7 +14,7 @@ EPS = 0.001
 BOUND = 100.0
 
 def kwargDef(arg, args, default):
-	if args.hasKey(arg): return args[arg]
+	if arg in args: return args[arg]
 	else: return default
 
 # The form determines what the (hyper)plane of intersection is, and its
@@ -28,7 +28,25 @@ def formDir(dirs, N):
 # The main algorithm, add new waves on each collision
 def runWevoNd(wavefront):
 	verticies = []
+	print(wavefront)
 	return partition(verticies)
+
+# Debug printing statements
+def waveTreePrint(WF, wave,idx):
+	wid = waveID(WF,wave)
+	if wave in WF.alias: wid = WF.alias[wave] + "(" + str(wid) + ")"
+	print("\t"*idx, wid, wave.span)
+	if wave.leaf(): return
+	p1, p2 = wave.parents()
+	waveTreePrint(WF, p1, idx + 1)
+	waveTreePrint(WF, p2, idx + 1)
+
+def debugPrint(WF, nw):
+	print("-------- DEBUG PRINT ---------")
+	p1, p2 = nw.parents()
+	print("PARENT N:",p1.N(), p2.N())
+	waveTreePrint(WF, nw,1)
+	print("------ END DEBUG PRINT -------")
 
 # A subspace 
 class subspace:
@@ -368,13 +386,13 @@ class partition:
 	# Create a map for every combination of points. Within reason.
 	def interNCache(self, vertex, N):
 		parent = vertex.parent
-		if not self.intermap.hasKey(N): self.intermap[N] = {}
+		if not N in self.intermap: self.intermap[N] = {}
 		numComb = 0
 		# Use a generator so our cache limit applies during computation
 		for faceID in combinations(parent,N):
 			numComb += 1
 			if numComb > self.intercachelimit: return False
-			if self.intermap[N].hasKey(faceID):
+			if faceID in self.intermap[N]:
 				self.intermap[N].append(vertex)
 			else:
 				self.intermap[N] = [vertex]
@@ -585,6 +603,7 @@ class wavefront:
 	def __init__(self, points, weights, ids={}):
 		self.point = points
 		self.weight = weights
+		self.alias = {}
 		self.dim = None
 		self.wave = []
 		self.debug = []
@@ -592,23 +611,29 @@ class wavefront:
 		self.ids = {}
 		self.nextID = 0
 		# Add the base waves from input data
-		self.start()
-	def start(self):
+		self.start(ids)
+	def start(self,ids={}):
 		self.wave = []
+		num = 0
 		for point, weight in zip(self.point, self.weight):
 			# Ensure points are equidimensional
 			if self.dim == None: self.dim = len(point)
 			if not len(point) == self.dim: continue
+			# Calculate alias if needed
+			alias = None
+			if num in ids: alias = ids[num]
+			num += 1
 			# Add the wave
-			self.addWave(baseWave(point,weight,self.dim))
+			self.addWave(baseWave(point,weight,self.dim),alias)
 	def N(self): return self.dim
 	# Add the specified wave to the wavefront, return if it was a success
-	def addWave(self,wave):
+	def addWave(self,wave,alias = None):
 		if wave == None: return False
 		if not wave.debug == None:
 			for vec in wave.debug:
 				self.debug.append(debugvec(wave.span,vec))
 		self.wave.append(wave)
+		if not alias == None: self.alias[wave] = alias
 		if wave.leaf(): 
 			self.ids[wave] = [self.nextID]
 			self.nextID += 1

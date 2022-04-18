@@ -28,6 +28,45 @@ def createArgumentParser():
 		default=sys.stdout)
 	return parser
 
+class humanInput:
+	def __init__(self, fileI = None):
+		self.len = 0
+		self.points = []
+		self.weights = []
+		self.ids = {}
+		self.readFromFile(fileI)
+
+	def toWavefront(self):
+		print(self.points,self.weights,self.ids)
+		return voronoi.wavefront(self.points, self.weights, self.ids)
+
+	def readFromFile(self, fileI):
+		if fileI == None: return True
+		for line in fileI: self.parseLine(line)
+		return True
+
+	def parseLine(self, line):
+		# Check for 'w=' and '!'
+		newID = self.len
+		weight = 1.0
+		point = []
+		idmatch = lambda t: t[0] == '!'
+		weightmatch = lambda t: t[0] == 'w' and t[1] == '='
+		for tok in line.strip().split():
+			if idmatch(tok): newID = str(tok[1:])
+			elif weightmatch(tok): weight = float(tok[2:])
+			else: point.append(float(tok))
+		self.points.append(point)
+		self.weights.append(weight)
+		if not newID == self.len: self.ids[self.len] = newID
+		self.len += 1
+
+class humanOutput:
+	def __init__(self, partition):
+		self.raw = partition
+	def writeToFile(self, fileO):
+		pass
+
 def parse(parser, args):
 	try: return parser.parse_args(args)
 	except: sys.exit(2)
@@ -46,14 +85,10 @@ def writeOutput(fileO, result, binary):
 		print("Exception:", e)
 		sys.exit(2)
 
-class fileInput:
-	def __init__(self, points, weights, ids):
-		self.points = points
-
 def readHumanReadable(fileI):
 	# Human readable has stuff and things
-	ret = {'points':[],'weights':[],'ids':{}}
-	return ret
+	read = humanInput(fileI)
+	return read
 
 def writeHumanReadable(fileO, result):
 	pass
@@ -64,9 +99,7 @@ def readBinary(fileI):
 def writeBinary(file0):
 	raise RuntimeError('Binary I/O function(s) not implemented')
 
-def wavefrontSetup(read):
-	points, weights, ids = read['points'], read['weights'], read['ids']
-	return voronoi.wavefront(points, weights, ids=ids)
+def wavefrontSetup(read): return read.toWavefront()
 
 def visualize(wavefront, result):
 	raise RuntimeError('Visualization not integrated')
@@ -80,7 +113,6 @@ if __name__ == "__main__":
 	readinput = readInput(parsed.input,parsed.binary)
 	# Pass the input to the wavefront algorithm
 	wavefront = wavefrontSetup(readinput)
-	print(wavefront.wave)
 	# Run the algorithm
 	partition = voronoi.runWevoNd(wavefront)
 	# Do visualization if wanted

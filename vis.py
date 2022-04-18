@@ -297,7 +297,7 @@ class VoronoiVis(ShowBase):
 	def addWave(self):
 		nw = self.wavefront.nextCollision()
 		if self.wavefront.addWave(nw):
-			debugPrint(self.wavefront, nw)
+			voronoi.debugPrint(self.wavefront, nw)
 			self.updateWavefront()
 			self.show()
 		else: print("--NO NEW WAVE---")
@@ -540,20 +540,6 @@ def debugVectors(nw):
 	#ret.append((lamcen,lambda T: nw.form.comp(3)[0]))
 	return [voronoi.debugvec(nw.span, x) for x in ret]
 
-def waveTreePrint(WF, wave,idx):
-	print("\t"*idx, voronoi.waveID(WF,wave), wave.span)
-	if wave.leaf(): return
-	p1, p2 = wave.parents()
-	waveTreePrint(WF, p1, idx + 1)
-	waveTreePrint(WF, p2, idx + 1)
-
-def debugPrint(WF, nw):
-	print("-------- DEBUG PRINT ---------")
-	p1, p2 = nw.parents()
-	print("PARENT N:",p1.N(), p2.N())
-	waveTreePrint(WF, nw,1)
-	print("------ END DEBUG PRINT -------")
-
 if __name__ == "__main__":
 
 	'''
@@ -574,11 +560,12 @@ if __name__ == "__main__":
 	data = [[4.5,1.75,5.0],[0.0,5.5,0.0],[0.0,0.05,3.05],[5.75,0.0,0.0]]
 	#data = [[3.0,0.0,0.0],[0.0,3.0,0.0],[0.0,3.0,5.0],[3.0,0.0,5.0]]
 	weight = [2.5, 2.0, 2.01, 2.2]
+	ids = {1:'base',2:'high'}
 	#data = [[0.0,2.0,-1.0],[-1.0,1.0,3.0]]
 	#weight = [2.0, 2.0]
 
 
-	WF = voronoi.wavefront(data, weight)
+	WF = voronoi.wavefront(data, weight, ids)
 	root = VoronoiVis(WF)
 	root.setTime(0.5)
 	root.run()
