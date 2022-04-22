@@ -102,13 +102,16 @@ def writeBinary(file0):
 def wavefrontSetup(read): return read.toWavefront()
 
 def visualize(wavefront, result):
-	raise RuntimeError('Visualization not integrated')
+	root = vis.VoronoiVis(wavefront)
+	root.setTime(0.5)
+	try: root.run()
+	except SystemExit: root.destroy()
 
-if __name__ == "__main__":
+def main(argv):
 	# Create a parser for command line arguments
 	parser = createArgumentParser()
 	# Allright, command line arguments parsed!
-	parsed = parse(parser,sys.argv[1:])
+	parsed = parse(parser,argv[1:])
 	# Now to read the input from file
 	readinput = readInput(parsed.input,parsed.binary)
 	# Pass the input to the wavefront algorithm
@@ -120,4 +123,8 @@ if __name__ == "__main__":
 	# Pass the result to the output file
 	writeOutput(parsed.output, partition, parsed.binary)
 	# We are done!
-	sys.exit(0)
+	return 0
+
+if __name__ == "__main__":
+	sys.exit(main(sys.argv))
+	

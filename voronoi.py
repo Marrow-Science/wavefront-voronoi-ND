@@ -11,7 +11,7 @@ from itertools import combinations
 
 # Globals are bad, but hey...
 EPS = 0.001
-BOUND = 100.0
+BOUND = 1000.0
 
 def kwargDef(arg, args, default):
 	if arg in args: return args[arg]
@@ -26,9 +26,12 @@ def formDir(dirs, N):
 	return scale(ret, 1.0 / magnitude(ret))
 
 # The main algorithm, add new waves on each collision
-def runWevoNd(wavefront):
-	verticies = []
-	print(wavefront)
+def runWevoNd(wavefront, eps = EPS):
+	newWave = wavefront.nextCollision(eps = eps)
+	while not newWave == None:
+		wavefront.addWave(newWave)
+		newWave = wavefront.nextCollision(eps = eps)
+	verticies = wavefront.getVerticies()
 	return partition(verticies)
 
 # Debug printing statements
@@ -96,7 +99,7 @@ class form:
 		N = self.N()
 		comp = []
 		i = 0
-		while len(comp) < compN and i < N:
+		while len(comp) + N < compN:
 			ih = [hat(compN,i)]
 			nxt = reject(self.space.basis + comp, ih)[0]
 			i += 1
@@ -235,7 +238,12 @@ class wave:
 		I = lambda T: vec(x1p(T), x2p(T))
 		Ir = lambda T: vec(x2p(T), x1p(T))
 		# The POI is defined by I and parent forms
+		# It is possible for the interplane
+		# TODO: orthP can be zero if f1 and f2 are complimentary.
+		# In this case, we need to move to a 1D case
 		orthP = interPlane(f1, f2)
+		print(f1.X,f2.X)
+		print(orthP.X(),orthP.basis,orthP.vec)
 		Ip = lambda T: project(orthP.basis,[I(T)])[0]
 		H = lambda T: reject([I(T)],[orthP.X()])[0]
 		P = lambda T: subspace([I(T),H(T)])
@@ -418,7 +426,7 @@ def clampSpan(wave, T, eps = EPS):
 	if (T - EPS) > wave.span[1]:
 		# TODO: potential bug here
 		# TODO: fix by clamping spans in windowing, not selection
-		print("Potential bug! Need better span clamps...")
+		#print("Potential bug! Need better span clamps...")
 		return [magnitude(vec(wave.center[0], wave.center[1]))], True
 	return None, False
 
@@ -599,6 +607,9 @@ def waveIDIN(overcache, wid):
 	return False
 
 # A wavefront is composed of many waves
+# TODO: encapsulation. Wavefronts need bounds they are provably correct in
+# TODO: encapsulation. By proving that "addWave" always correctly adds a wave
+# TODO: within the current bounds (by finding further verticies) we can do this 
 class wavefront:
 	def __init__(self, points, weights, ids={}):
 		self.point = points
@@ -607,11 +618,15 @@ class wavefront:
 		self.dim = None
 		self.wave = []
 		self.debug = []
-		# Keep track of wave IDs for debug purposes
+		# Keep track of wave IDs for debug and readability purposes
 		self.ids = {}
 		self.nextID = 0
 		# Add the base waves from input data
 		self.start(ids)
+		# There are no start verticies
+		self.verticies = []
+		# Keep track of interior and exterior waves / crossovers
+		self.interior = {}
 	def start(self,ids={}):
 		self.wave = []
 		num = 0
@@ -627,6 +642,7 @@ class wavefront:
 			self.addWave(baseWave(point,weight,self.dim),alias)
 	def N(self): return self.dim
 	# Add the specified wave to the wavefront, return if it was a success
+	# TODO: encapsulation: this needs to guarantee a proper waveform
 	def addWave(self,wave,alias = None):
 		if wave == None: return False
 		if not wave.debug == None:
@@ -650,8 +666,13 @@ class wavefront:
 			if T > s[0] and (s[1] == None or T < s[1]):
 				ret.append(wave)
 		return ret
+	# Return all verticies in the currenet wavefront
+	def getVerticies(self):
+		return self.verticies
 	# TODO: need massive speedups (Don't compare all waves baka!)
-	def nextCollision(self):
+	# TODO: encapsulation. This should be a function over wavefronts.
+	# TODO: encapsulation: there should only be an "addNext" function?
+	def nextCollision(self, eps = EPS):
 		col = None
 		minT = 0.0
 		endT = 0.0
@@ -662,12 +683,15 @@ class wavefront:
 				wid = waveID2(self, w1, w2)
 				if waveIDIN(overcache, wid): continue
 				if waveIDIN(self.widList(), wid): continue
-				else:
-					special = (w1.N() == 2 and w2.N() == 0) or (w1.N() == 0 and w2.N() == 2)
-					if not special:
-						overcache.append(wid)
+				# TODO: just for debug
+				if w1.N() == 2 and w2.N() == 0: continue
+				if w1.N() == 0 and w2.N() == 2: continue
+				# TODO: remove
+				overcache.append(wid)
 				# Wave siblings have already intersected
-				if waveSibling(self, w1, w2): continue
+				if waveSibling(self, w1, w2):
+					# TODO: check interior or not!
+					continue
 				# PRINT WAVE PLUS
 				# Waves need to span space to intersect
 				if w1.N() + w2.N() < self.dim - 1: continue
@@ -680,7 +704,9 @@ class wavefront:
 					print("POTVRT:", w1.N(), w2.N())
 					print("WIDS",self.ids[w1],self.ids[w2])
 					m = wave(w1, w2, self.dim)
-					print("WAVE DIMS", w1.N(), w2.N(), m.N())
+					if m.valid():
+						print("WAVE DIMS", w1.N(), w2.N(), m.N())
+					
 					inf, sup = m.span
 					p1,p2 = m.parents()
 					r1p = projectPOI(p1.R, m.D[0])
@@ -709,7 +735,7 @@ class wavefront:
 					c2 = lambda t: p2.L(t)
 					l1 = lambda t: vec(c1(t),c2(t))
 					l2 = lambda t: vec(c2(t),c1(t))
-					cD = lambda t: m.L(T)
+					cD = lambda t: m.L(t)
 					x1 = m.x1
 					x2 = m.x2
 					self.debug = []

@@ -230,7 +230,7 @@ class VoronoiVis(ShowBase):
 		# Store the wavefront here
 		self.wavefront = WF
 		# Initiate hotkeys
-		self.init_GUI()
+		self.init_GUI(WF)
 		self.init_camera()
 		self.init_keybinds()
 		# Initialize the geometry
@@ -241,10 +241,16 @@ class VoronoiVis(ShowBase):
 		self.vector = createVectorGeometry()
 		self.debug = []
 		self.wave = []
+		# Update the wavefront
+		self.updateWavefront()
+		self.show()
 
-	def init_GUI(self):
+	def init_GUI(self, wavefront):
+		#TODO: set slider based on wavefront bounds
+		#waverange = wavefront.bounds()
+		waverange = (0,10.0)
 		self.T = DirectSlider(
-			range=(0,10.0),
+			range=waverange,
 			value = 5.0,
 			pageSize = 0.0003,
 			pos = (0.0,0.0,0.9),
@@ -420,8 +426,6 @@ class VoronoiVis(ShowBase):
 				h.hide()
 				continue
 			else: h.show()
-			# TODO: remove
-			if w.N() == 2: h.hide()
 			N = w.N()
 			center = w.L(T)
 			p1, p2 = (None,None)
