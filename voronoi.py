@@ -561,23 +561,58 @@ def hasParent(w1,w2):
 	for p in w1.parents(): ret = ret or hasParent(p,w2)
 	return ret
 
-def waveSibling(wave, w1, w2):
+def negWID(wid1,wid2):
+	ret = []
+	change = False
+	for wid in wid2:
+		if wid in wid1:
+			change = True
+			continue
+		ret += [wid]
+	return change, ret
+
+def subWID(wid1, wid2):
+	# All parts of id1 must be in id2
+	for wid in wid1:
+		if not wid in wid2:
+			return False
+	return True
+
+def siblingWID(wid1, wid2):
+	for wid in wid1:
+		if wid in wid2: return True
+	return False
+
+# Siblings share a wave and have already intersected
+def waveSibling(WF, w1, w2):
 	# If their IDs share a number
-	id1, id2 = waveID(wave, w1), waveID(wave,w2)
-	isSibling = False
-	for x in id1:
-		if x in id2:
-			isSibling = True
-			break
-	return isSibling
-	# TODO: is this old way the correct one?
-	'''
-	for w in [x for x in wave if not x.leaf()]:
-		l, r = w.parents()
-		if l == w1 and r == w2: return True
-		if r == w1 and l == w2: return True
-	return hasParent(w1,w2) or hasParent(w2,w1)
-	'''
+	wid1, wid2 = waveID(WF, w1), waveID(WF,w2)
+	return siblingWID(wid1, wid2)
+
+# Wave cousins are when a 3rd party wave shares these waves as sub-waves
+# They are candidates for interior waves that don't intersect
+def waveCousin(WF, parent, w1, w2):
+	wid = waveID(WF, parent)
+	wid1, wid2 = waveID(WF, w1), waveID(WF, w2)
+	sub1, sub2 = subWID(wid, wid1), subWID(wid, wid2)
+	print(wid, wid1, wid2, sub1, sub2)
+	return sub1 and sub2
+
+# TODO: efficiency
+def interiorCandidates(WF, w1, w2):
+	wid1, wid2 = waveID(WF, w1), waveID(WF, w2)
+	neg1 = []
+	neg2 = []
+	for wid in WF.ids.values():
+		ch1, rem1 = negWID(wid1, wid)
+		ch2, rem2 = negWID(wid2, wid)
+		# Interiors are always relative to a single base wave
+		if ch1 and len(rem1) == 1: neg1 += [rem1]
+		if ch2 and len(rem2) == 1: neg2 += [rem2]
+	union = []
+	for neg in neg1:
+		if neg in neg2: union.append(tuple(neg))
+	return union
 
 # Debug vectors to print
 class debugvec:
@@ -589,7 +624,7 @@ class debugvec:
 def waveID(WF, wave):
 	if wave in WF.ids.keys(): return WF.ids[wave]
 	if wave.leaf(): return [-1]
-	return sorted(waveID(WF,wave.p1) + waveID(WF,wave.p2))
+	return tuple(sorted(waveID(WF,wave.p1) + waveID(WF,wave.p2)))
 
 def waveID2(WF, w1, w2):
 	return sorted(waveID(WF,w1) + waveID(WF,w2))
@@ -620,6 +655,7 @@ class wavefront:
 		self.debug = []
 		# Keep track of wave IDs for debug and readability purposes
 		self.ids = {}
+		self.rev = {}
 		self.nextID = 0
 		# Add the base waves from input data
 		self.start(ids)
@@ -650,11 +686,14 @@ class wavefront:
 				self.debug.append(debugvec(wave.span,vec))
 		self.wave.append(wave)
 		if not alias == None: self.alias[wave] = alias
-		if wave.leaf(): 
-			self.ids[wave] = [self.nextID]
+		wid = None
+		if wave.leaf():
+			wid = tuple([self.nextID])
 			self.nextID += 1
 		else:
-			self.ids[wave] = waveID(self,wave)
+			wid = waveID(self, wave)
+		self.ids[wave] = tuple(wid)
+		self.rev[tuple(wid)] = wave
 		return True
 	def widList(self): return [x for x in self.ids.values()]
 	def popWave(self): self.wave.pop()
@@ -669,6 +708,18 @@ class wavefront:
 	# Return all verticies in the currenet wavefront
 	def getVerticies(self):
 		return self.verticies
+	# Calculate if a wave is interior to another, and when they will leave
+	def checkInterior(self, wave, interiorID):
+		# Just get the wave center and compare it to the wid
+		print(wave.center, wave.span, interiorID)
+		start = wave.span[0]
+		print(self.rev)
+		interWave = self.rev[interiorID]
+		print(wave.center[0], interWave.L(start))
+		disvec = vec(wave.center[0], interWave.L(start))
+		dismag = magnitude(disvec)
+		print(disvec, dismag, interWave.R(start))
+		# TODO: START HERE!
 	# TODO: need massive speedups (Don't compare all waves baka!)
 	# TODO: encapsulation. This should be a function over wavefronts.
 	# TODO: encapsulation: there should only be an "addNext" function?
@@ -686,15 +737,22 @@ class wavefront:
 				# TODO: just for debug
 				if w1.N() == 2 and w2.N() == 0: continue
 				if w1.N() == 0 and w2.N() == 2: continue
-				# TODO: remove
+				# TODO: remove above ^
 				overcache.append(wid)
 				# Wave siblings have already intersected
-				if waveSibling(self, w1, w2):
-					# TODO: check interior or not!
-					continue
+				if waveSibling(self, w1, w2): continue
 				# PRINT WAVE PLUS
 				# Waves need to span space to intersect
 				if w1.N() + w2.N() < self.dim - 1: continue
+				# TODO: interior checks
+				# TODO: check that w1 and w2 are not interior
+				# Perform wave merge calculations
+				merge = wave(w1, w2, self.dim)
+				# Interior calculations
+				interiorCand = interiorCandidates(self, w1, w2)
+				print(interiorCand)
+				for interior in interiorCand:
+					self.checkInterior(merge, interior)
 				# Waves that barely span space make a vertex
 				if w1.N() + w2.N() == self.dim - 1:
 					print(w1.N(), w2.N())
@@ -703,7 +761,7 @@ class wavefront:
 					# TODO: Vertex intersections!
 					print("POTVRT:", w1.N(), w2.N())
 					print("WIDS",self.ids[w1],self.ids[w2])
-					m = wave(w1, w2, self.dim)
+					m = merge
 					if m.valid():
 						print("WAVE DIMS", w1.N(), w2.N(), m.N())
 					
