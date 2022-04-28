@@ -11,7 +11,7 @@ from itertools import combinations
 
 # Globals are bad, but hey...
 EPS = 0.001
-BOUND = 1000.0
+BOUND = 10.0
 
 def kwargDef(arg, args, default):
 	if arg in args: return args[arg]
@@ -508,7 +508,7 @@ def projectPOI(radius, poiNormal):
 	projL = lambda t, R, D: R(t) if D == None else Rp(t, R, D)
 	return lambda t: projL(t, radius, poiNormal)
 
-#Zero when r1 + r2 = I or abs(r1 - r2) = I! (Prev: when r1 = c1)
+#Zero when when r1 = c1, such as in 1d when abs(r1 - r2) = I or r1 + r2 = I
 def rzero(wave):
 	# Initialize local names for variables
 	p1, p2 = wave.parents()
@@ -518,34 +518,29 @@ def rzero(wave):
 	r1p = projectPOI(p1.R, d1)
 	r2p = projectPOI(p2.R, d2)
 	# Find point of interection between p1 and p2
-	p,n = (None, None)
-	fA, fB = (None, None)
+	func = None
 	I = lambda t: magnitude(wave.I(t))
 	# When the plane of intersection is 1D
 	if wave.C2L == None:
-		n = lambda t: abs(r1p(t) - r2p(t)) - I(t)
-		p = lambda t: abs(r1p(t) + r2p(t)) - I(t)
+		n1 = lambda t: r1p(t) - r2p(t) - I(t)
+		n2 = lambda t: r2p(t) - r1p(t) - I(t)
+		p = lambda t: r1p(t) + r2p(t) - I(t)
+		func = [p, n1, n2]
 	# When the POI is 2D
 	else:
 		mx = lambda t: r1p(t)**2.0 + r2p(t)**2.0
 		cosR = lambda t: 2.0 * r1p(t) * r2p(t) * math.cos(wave.T(t))
+		# TODO: We may need a positive function? I'm not sure.
 		n = lambda t: mx(t) - cosR(t) - (I(t)**2.0)
-		p = None
+		func = [n]
 
 	# For each possible root do root finding
 	roots = []
 	for inf,sup in span:
-		r1, r2 = None, None
-		if n(inf) * n(sup) < 0.0:
-			r1 = solve(n, a = inf, b = sup)
-			roots.append(r1)
-		if not p == None and p(inf) * p(sup) < 0.0:
-			r2 = solve(p, a = inf, b = sup)
-			roots.append(r2)
-	#TODO: remove debug statements
-	if p1.N() + p2.N() == 2:
-		print("PARSPAN", p1.span, p2.span)
-		print("ROOTS!",roots, inf, sup, n(inf), n(sup))
+		for fun in func:
+			if(fun(inf) * fun(sup)) < 0.0:
+				root = solve(fun, a = inf, b = sup)
+				roots.append(root)
 	return roots
 
 def waveEq(w1, w2):
@@ -708,18 +703,15 @@ class wavefront:
 	# Return all verticies in the currenet wavefront
 	def getVerticies(self):
 		return self.verticies
-	# Calculate if a wave is interior to another, and when they will leave
+	# Calculate if a wave is interior to another
 	def checkInterior(self, wave, interiorID):
 		# Just get the wave center and compare it to the wid
-		print(wave.center, wave.span, interiorID)
 		start = wave.span[0]
-		print(self.rev)
 		interWave = self.rev[interiorID]
-		print(wave.center[0], interWave.L(start))
 		disvec = vec(wave.center[0], interWave.L(start))
 		dismag = magnitude(disvec)
-		print(disvec, dismag, interWave.R(start))
-		# TODO: START HERE!
+		# The wave is interior if the center lies within the outer wave
+		return dismag < interWave.R(start)
 	# TODO: need massive speedups (Don't compare all waves baka!)
 	# TODO: encapsulation. This should be a function over wavefronts.
 	# TODO: encapsulation: there should only be an "addNext" function?
@@ -750,9 +742,15 @@ class wavefront:
 				merge = wave(w1, w2, self.dim)
 				# Interior calculations
 				interiorCand = interiorCandidates(self, w1, w2)
-				print(interiorCand)
 				for interior in interiorCand:
-					self.checkInterior(merge, interior)
+					# If this item is interior, check next
+					if self.checkInterior(merge, interior):
+						out = self.rev[interior]
+						m = merge
+						outW = wave(m, out, self.dim)
+						# TODO: start here!
+						print("BREAKOUT WAVE")
+						waveTreePrint(self, outW, 0)
 				# Waves that barely span space make a vertex
 				if w1.N() + w2.N() == self.dim - 1:
 					print(w1.N(), w2.N())
