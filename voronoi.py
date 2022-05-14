@@ -857,15 +857,23 @@ class wavefront:
 					c2 = lambda t: p2.L(t)
 					l1 = lambda t: vec(c1(t),c2(t))
 					l2 = lambda t: vec(c2(t),c1(t))
-					cD = lambda t: m.L(s[0])
+					cD = lambda t: m.L(t)
+					cL1 = lambda t: scale(m.p1v(t), 5.0)
+					cL2 = lambda t: scale(m.p2v(t), 5.0)
 					x1 = m.x1
 					x2 = m.x2
 					self.debug = []
 					self.debug.append(debugvec(s1,(c1,sh)))
 					self.debug.append(debugvec(s2,(c2,sh)))
 					# I debug
-					
+					self.debug.append(debugvec(s,(c1,m.I)))
+					self.debug.append(debugvec(s,(c1,m.Ip)))
+					# Pv debug
+					self.debug.append(debugvec(s1,(c1,cL1)))
+					self.debug.append(debugvec(s2,(c2,cL2)))
+					# C debug
 					self.debug.append(debugvec(s,(cD,sh)))
+					self.debug.append(debugvec(s,(cD,m.H)))
 					continue
 				# An invalid merge only happens in rare cases
 				if not merge.valid(): continue
