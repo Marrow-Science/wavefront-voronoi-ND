@@ -252,7 +252,7 @@ class VoronoiVis(ShowBase):
 		self.T = DirectSlider(
 			range=waverange,
 			value = 5.0,
-			pageSize = 0.0003,
+			pageSize = 0.00003,
 			pos = (0.0,0.0,0.9),
 			command = self.show)
 		self.T.resetFrameSize()
@@ -301,12 +301,8 @@ class VoronoiVis(ShowBase):
 		return Task.cont
 
 	def addWave(self):
-		nw = self.wavefront.nextCollision()
-		if self.wavefront.addWave(nw):
-			voronoi.debugPrint(self.wavefront, nw)
-			self.updateWavefront()
-			self.show()
-		else: print("--NO NEW WAVE---")
+		# TODO: hide / restore waves
+		print("--NO NEW WAVE---")
 
 	def removeWave(self):
 		self.wavefront.popWave()
@@ -422,7 +418,8 @@ class VoronoiVis(ShowBase):
 			self.vecplace(h, v.vec, T)
 		# Wave placement
 		for w,h in self.wave:
-			if not voronoi.inSpan(T, w.span):
+			span = voronoi.exteriorSpan(self.wavefront, w)
+			if not voronoi.inSpan(T, span):
 				h.hide()
 				continue
 			else: h.show()
@@ -570,6 +567,7 @@ if __name__ == "__main__":
 
 
 	WF = voronoi.wavefront(data, weight, ids)
+	voronoi.runWevoNd(WF)
 	root = VoronoiVis(WF)
 	root.setTime(0.5)
 	root.run()

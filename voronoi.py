@@ -27,10 +27,11 @@ def formDir(dirs, N):
 
 # The main algorithm, add new waves on each collision
 def runWevoNd(wavefront, eps = EPS):
-	newWave = wavefront.nextCollision(eps = eps)
-	while not newWave == None:
-		wavefront.addWave(newWave)
-		newWave = wavefront.nextCollision(eps = eps)
+	event, eventHandler = wavefront.nextEvent(eps = eps)
+	# Handle events untill none are left
+	while not event == None:
+		eventHandler(event)
+		event, eventHandler = wavefront.nextEvent(eps = eps)
 	verticies = wavefront.getVerticies()
 	return partition(verticies)
 
@@ -447,6 +448,19 @@ def centerSpan(wave, time, eps = EPS, bound = BOUND):
 	c1 = None if time[1] == None else L(time[1])
 	return (c0, c1), True
 
+# The timespans during which a wave is an exterior one that can intersect
+def exteriorSpan(WF, wave):
+	inf, sup = wave.span
+	# Check breakouts for infimum calculation
+	if wave in WF.breakout and len(WF.breakout[wave]) > 0:
+		breakout = WF.breakout[wave]
+		inf = max([i.span[0] for i in breakout])
+	# Check breakins for supremum calculation
+	if wave in WF.breakin and len(WF.breakin[wave]) > 0:
+		breakin = WF.breakin[wave]
+		sup = min([i.span[1] for i in breakin])
+	return (inf, sup)
+
 def linear(a, b, eps = EPS):
 	p = lambda T: (-1.0 * b(T)) / a(T)
 	cP = lambda T: 0.0 if abs(a(T)) < eps else p(T)
@@ -617,12 +631,16 @@ class debugvec:
 
 # Identify a wave uniquely in the wavefront
 def waveID(WF, wave):
+	if wave == None: return [-1]
 	if wave in WF.ids.keys(): return WF.ids[wave]
 	if wave.leaf(): return [-1]
 	return tuple(sorted(waveID(WF,wave.p1) + waveID(WF,wave.p2)))
 
 def waveID2(WF, w1, w2):
-	return sorted(waveID(WF,w1) + waveID(WF,w2))
+	ret = [w for w in waveID(WF,w1)]
+	for w in waveID(WF,w2):
+		if not w in ret: ret.append(w)
+	return sorted(ret)
 
 # return if two waves are equivalent
 def waveIDEQ(id1,id2):
@@ -647,17 +665,21 @@ class wavefront:
 		self.alias = {}
 		self.dim = None
 		self.wave = []
+		self.ended = []
 		self.debug = []
 		# Keep track of wave IDs for debug and readability purposes
 		self.ids = {}
 		self.rev = {}
 		self.nextID = 0
-		# Add the base waves from input data
-		self.start(ids)
 		# There are no start verticies
 		self.verticies = []
-		# Keep track of interior and exterior waves / crossovers
-		self.interior = {}
+		# Keep track of interior / exterior crossovers
+		self.breakout = {}
+		self.breakin = {}
+		# Keep track of children for purposes of wave endings
+		self.children = {}
+		# Add the base waves from input data
+		self.start(ids)
 	def start(self,ids={}):
 		self.wave = []
 		num = 0
@@ -672,6 +694,12 @@ class wavefront:
 			# Add the wave
 			self.addWave(baseWave(point,weight,self.dim),alias)
 	def N(self): return self.dim
+	# Add the specified vertex to the wavefront
+	# TODO: encapsulation, verify that it is indeed a vertex?
+	def addVertex(self, vertex):
+		wid = waveID(self, vertex)
+		self.ids[vertex] = tuple(wid)
+		self.rev[tuple(wid)] = vertex
 	# Add the specified wave to the wavefront, return if it was a success
 	# TODO: encapsulation: this needs to guarantee a proper waveform
 	def addWave(self,wave,alias = None):
@@ -689,7 +717,46 @@ class wavefront:
 			wid = waveID(self, wave)
 		self.ids[wave] = tuple(wid)
 		self.rev[tuple(wid)] = wave
+		# The wave currently has no children and is exterior
+		self.children[wave] = []
+		if not wave in self.breakin: self.breakin[wave] = []
+		if not wave in self.breakout: self.breakout[wave] = []
+		# Calculate which parents this wave is a child of
+		# This includes overlap, while merge operations ignore it
+		# TODO: better efficiency
+		if not wave.leaf():
+			for cand in self.wave:
+				candWID = waveID(self, cand)
+				waveWID = waveID(self, wave)
+				if len(candWID) == len(waveWID): continue
+				if subWID(candWID, waveWID):
+					self.children[cand].append(wave)
 		return True
+	# TODO: encapsulation to assure good waveform
+	def endWave(self, wave):
+		# Base waves do not end
+		if wave.leaf(): raise Exception("Tried to end a base wave")
+		self.ended.append(wave)
+		# If this is a 1-form mark the smaller wave as interior
+		p1, p2 = wave.parents()
+		if p1.leaf() and p2.leaf():
+			if p1.weight > p2.weight:
+				self.breakin[p2].append(wave)
+			else:
+				self.breakin[p1].append(wave)
+			return
+		# Remove the wave from parents' children and mark lonelies
+		lonely = []
+		for cand in self.wave:
+			if wave in self.children[cand]:
+				self.children[cand].remove(wave)
+				if len(self.children[cand]) == 0:
+					lonely.append(cand)
+		# If parents are loney, mark them as breakin if needed
+		for loner in lonely:
+			if len(self.breakout[loner]) > 0: continue
+			self.breakin[loner].append(wave)
+		
 	def widList(self): return [x for x in self.ids.values()]
 	def popWave(self): self.wave.pop()
 	# Return all waves active at t = T
@@ -715,47 +782,45 @@ class wavefront:
 	# TODO: need massive speedups (Don't compare all waves baka!)
 	# TODO: encapsulation. This should be a function over wavefronts.
 	# TODO: encapsulation: there should only be an "addNext" function?
-	def nextCollision(self, eps = EPS):
+	def nextWaveMerge(self, eps = EPS):
 		col = None
 		minT = 0.0
-		endT = 0.0
+		# Cache to prevent symmetric overlapp
 		overcache = []
+		# Check for wave mergings
 		for w1 in self.wave:
 			for w2 in self.wave:
 				# ID candidates to prevent overlapp.
 				wid = waveID2(self, w1, w2)
 				if waveIDIN(overcache, wid): continue
 				if waveIDIN(self.widList(), wid): continue
-				# TODO: just for debug
-				if w1.N() == 2 and w2.N() == 0: continue
-				if w1.N() == 0 and w2.N() == 2: continue
-				# TODO: remove above ^
-				overcache.append(wid)
+				# TODO: remove
+				if not len(wid) == 4:
+					overcache.append(wid)
+				# TODO: debug remove
 				# Wave siblings have already intersected
 				if waveSibling(self, w1, w2): continue
-				# PRINT WAVE PLUS
 				# Waves need to span space to intersect
 				if w1.N() + w2.N() < self.dim - 1: continue
-				# TODO: interior checks
-				# TODO: check that w1 and w2 are not interior
 				# Perform wave merge calculations
 				merge = wave(w1, w2, self.dim)
-				# Interior calculations
+				# Interior calculations TODO: cache, clean
+				# TODO: move outside of this function
+				self.breakout[merge] = []
 				interiorCand = interiorCandidates(self, w1, w2)
 				for interior in interiorCand:
-					# If this item is interior, check next
+					# Store breakout wave(s) when confirmed
 					if self.checkInterior(merge, interior):
 						out = self.rev[interior]
-						m = merge
-						outW = wave(m, out, self.dim)
-						# TODO: start here!
-						print("BREAKOUT WAVE")
-						waveTreePrint(self, outW, 0)
+						BW = wave(merge, out, self.dim)
+						self.breakout[merge].append(BW)
 				# Waves that barely span space make a vertex
+				# So just store it and we gucci
 				if w1.N() + w2.N() == self.dim - 1:
-					print(w1.N(), w2.N())
 					if not (w1.N() == 1 and w2.N() == 1):
 						continue
+					# Store the vertex so it is not re-calculated
+					self.addVertex(merge)
 					# TODO: Vertex intersections!
 					print("POTVRT:", w1.N(), w2.N())
 					print("WIDS",self.ids[w1],self.ids[w2])
@@ -787,34 +852,56 @@ class wavefront:
 					s = m.span
 					s1 = p1.span
 					s2 = p2.span
+					sh = lambda t: scale(hat(3,0),0.01)
 					c1 = lambda t: p1.L(t)
 					c2 = lambda t: p2.L(t)
 					l1 = lambda t: vec(c1(t),c2(t))
 					l2 = lambda t: vec(c2(t),c1(t))
-					cD = lambda t: m.L(t)
+					cD = lambda t: m.L(s[0])
 					x1 = m.x1
 					x2 = m.x2
 					self.debug = []
-					# X's
-					self.debug.append(debugvec(s1,(c1,x1)))
-					self.debug.append(debugvec(s2,(c2,x2)))
+					self.debug.append(debugvec(s1,(c1,sh)))
+					self.debug.append(debugvec(s2,(c2,sh)))
 					# I debug
 					
-					self.debug.append(debugvec(s1,(c1,l1)))
-					self.debug.append(debugvec(s1,(cD,m.v1)))
-					self.debug.append(debugvec(s1,(cD,m.v2)))
-					self.debug.append(debugvec(s1,(cD,m.H)))
-					# Ps
-					self.debug.append(debugvec(s1,(c1,m.p1v)))
-					self.debug.append(debugvec(s2,(c2,m.p2v)))
+					self.debug.append(debugvec(s,(cD,sh)))
 					continue
-				merge = wave(w1, w2, self.dim)
+				# An invalid merge only happens in rare cases
 				if not merge.valid(): continue
-				T = merge.span[0]
+				# Find the next event, either merge or join
+				T = exteriorSpan(self, merge)[0]
 				if col == None or T < minT:
 					col = merge
 					minT = T
-		return col
+		return col, minT
+		
+	def nextWaveEnd(self, eps = EPS):
+		end = None
+		minT = 0.0
+		# Check for (unmarked) wave endings
+		for w in self.wave:
+			if w in self.ended: continue
+			T = w.span[1]
+			if T == None: continue
+			if end == None or T < minT:
+				end = w
+				minT = T
+		return end, minT
+		
+	def nextEvent(self, eps = EPS):
+		waveEnd, eT = self.nextWaveEnd(eps)
+		waveMerge, mT = self.nextWaveMerge(eps)
+		#print("END CANDIDATE", eT, waveID(self, waveEnd))
+		#print("MERGE CANDIDATE", mT, waveID(self, waveMerge))
+		# Events are just a wave and what to do (add or remove)
+		endEvent = (waveEnd, lambda x: self.endWave(x))
+		mergeEvent = (waveMerge, lambda x: self.addWave(x))
+		# Wave ends are prioritized over new merges in edge cases
+		if waveEnd == None and waveMerge == None: return None, None
+		if waveEnd == None: return mergeEvent
+		if waveMerge == None: return endEvent
+		return endEvent if (eT - eps) < mT else mergeEvent
 
 # TODO: move these into libraries
 # '''''''''''
