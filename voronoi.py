@@ -208,7 +208,6 @@ class wave:
 	# Partial case of one directed and one undirected wavefront
 	# In this case, the intersection plane is 1D
 	# But the POI does not intersect both parent centers
-	# Only case with D vectors TODO: polish
 	def interInit0xN(self, p1, p2, c1, c2, f1, f2):
 		# Xp, the centers of each wave (lambdas)
 		x1p, x2p = (self.x1p, self.x2p)
@@ -228,78 +227,6 @@ class wave:
 		theta = None
 		C2L = None
 		return P, theta, Ip, D, C2L
-
-	# Full case of two directed wavefronts
-	# In this case the intersection plane is 2D
-	# The POI intersects both parent centers
-	def interInitNxN(self, p1, p2, c1, c2, f1, f2):
-		# Calculate I
-		x1p = lambda T: p1.L(T, clamp = False)
-		x2p = lambda T: p2.L(T, clamp = False)
-		I = lambda T: vec(x1p(T), x2p(T))
-		Ir = lambda T: vec(x2p(T), x1p(T))
-		# The POI is defined by I and parent forms
-		# It is possible for the interplane
-		# TODO: orthP can be zero if f1 and f2 are complimentary.
-		# In this case, we need to move to a 1D case
-		orthP = interPlane(f1, f2)
-		print(f1.X,f2.X)
-		print(orthP.X(),orthP.basis,orthP.vec)
-		Ip = lambda T: project(orthP.basis,[I(T)])[0]
-		Ipr = lambda T: project(orthP.basis,[Ir(T)])[0]
-		H = lambda T: reject([I(T)],[orthP.X()])[0]
-		Hr = lambda T: reject([Ir(T)],[orthP.X()])[0]
-		P1 = lambda T: subspace([I(T),H(T)])
-		P2 = lambda T: subspace([Ir(T),Hr(T)])
-		P = P1
-		# Calculate projections
-		x1 = lambda T: norm(project(P1(T).basis,[f1.X])[0])
-		x2 = lambda T: norm(project(P2(T).basis,[f2.X])[0])
-		d1, d2 = None, None
-		# Calculate Centerlines to make a clean POI
-		# TODO: move subspace calculations away from lambdas?
-		# TODO: potential bug here with negatives? Not sure.
-		# TODO: clean up angle code by using rejections instead
-		#p1v = lambda T: norm(reject([x1(T)], [I(T)])[0])
-		#p2v = lambda T: norm(reject([x2(T)], [Ir(T)])[0])
-		p1vec = lambda T: reject([x1(T)], P1(T).basis)
-		p1v = lambda T: vsum(p1vec(T)[0],p1vec(T)[1])
-		p2vec = lambda T: reject([x2(T)], P2(T).basis)
-		p2v = lambda T: vsum(p2vec(T)[0],p2vec(T)[1])
-		Pclean = lambda T: subspace([p1v(T),p2v(T)])
-		# Calculate raw angles (exterior or interior)
-		t1a = lambda T: angle(x1(T), I(T))
-		t2a = lambda T: angle(x2(T), Ir(T))
-		# Ensure the angle is interior
-		hC = lambda th, T: th(T) < (math.pi / 2.0)
-		rC = lambda th, T: math.pi - th(T)
-		interior = lambda th, T: rC(th,T) if hC(th,T) else th(T)
-		# Calculate final angle lambdas
-		t1 = lambda T: interior(t1a,T) - (math.pi / 2.0)
-		t2 = lambda T: interior(t2a,T) - (math.pi / 2.0)
-		Th = lambda T: math.pi - (t1(T) + t2(T))
-		# Parameterize C2 in terms of C1
-		sin = lambda th: math.sin(th)
-		C2L = (lambda T: 0.0, lambda T: sin(t1(T)) / sin(t2(T)))
-		# Store the plane of intersection
-		Pl = lambda T: Pclean(T).vec
-		# Return the setup information
-		self.x1 = lambda T: x1(T)
-		self.x2 = lambda T: x2(T)
-		self.v1 = lambda T: P1(T).basis[0]
-		self.v2 = lambda T: P1(T).basis[1]
-		self.t1a = t1a
-		self.t2a = t2a
-		self.t1 = t1
-		self.t2 = t2
-		self.Ip = Ip
-		self.H = H
-		self.Hr = Hr
-		self.p1v = p1v
-		self.p2v = p2v
-		self.p1vec = p1vec
-		self.p2vec = p2vec
-		return Pl, Th, I, (d1, d2), C2L
 
 	def spanInit(self):
 		time,val = timeSpan(self)
@@ -526,21 +453,12 @@ def rzero(wave):
 	r1p = projectPOI(p1.R, d1)
 	r2p = projectPOI(p2.R, d2)
 	# Find point of interection between p1 and p2
-	func = None
 	I = lambda t: magnitude(wave.I(t))
 	# When the plane of intersection is 1D
-	if wave.C2L == None:
-		n1 = lambda t: r1p(t) - r2p(t) - I(t)
-		n2 = lambda t: r2p(t) - r1p(t) - I(t)
-		p = lambda t: r1p(t) + r2p(t) - I(t)
-		func = [p, n1, n2]
-	# When the POI is 2D
-	else:
-		mx = lambda t: r1p(t)**2.0 + r2p(t)**2.0
-		cosR = lambda t: 2.0 * r1p(t) * r2p(t) * math.cos(wave.T(t))
-		# TODO: We may need a positive function? I'm not sure.
-		n = lambda t: mx(t) - cosR(t) - (I(t)**2.0)
-		func = [n]
+	n1 = lambda t: r1p(t) - r2p(t) - I(t)
+	n2 = lambda t: r2p(t) - r1p(t) - I(t)
+	p = lambda t: r1p(t) + r2p(t) - I(t)
+	func = [p, n1, n2]
 
 	# For each possible root do root finding
 	roots = []
@@ -693,6 +611,7 @@ class wavefront:
 	# TODO: encapsulation, verify that it is indeed a vertex?
 	def addVertex(self, vertex):
 		wid = waveID(self, vertex)
+		print("ADDING VERTEX", wid)
 		self.ids[vertex] = tuple(wid)
 		self.rev[tuple(wid)] = vertex
 	# Add the specified wave to the wavefront, return if it was a success
@@ -702,6 +621,11 @@ class wavefront:
 		if not wave.debug == None:
 			for vec in wave.debug:
 				self.debug.append(debugvec(wave.span,vec))
+		# Waves that barely span space make a vertex
+		# So just store it and we gucci
+		if wave.N() == -1:
+			self.addVertex(wave)
+			return
 		self.wave.append(wave)
 		if not alias == None: self.alias[wave] = alias
 		wid = None
@@ -733,6 +657,8 @@ class wavefront:
 		# Base waves do not end
 		if wave.leaf(): raise Exception("Tried to end a base wave")
 		self.ended.append(wave)
+		# Store the wave vertex associated with the end
+		self.addVertex(wave)
 		# If this is a 1-form mark the smaller wave as interior
 		p1, p2 = wave.parents()
 		if p1.leaf() and p2.leaf():
@@ -807,12 +733,6 @@ class wavefront:
 						out = self.rev[interior]
 						BW = wave(merge, out, self.dim)
 						self.breakout[merge].append(BW)
-				# Waves that barely span space make a vertex
-				# So just store it and we gucci
-				if w1.N() + w2.N() == self.dim - 1:
-					#self.addVertex(merge)
-					print("VERTEX CODE HERE!")
-					continue
 				# An invalid merge only happens in rare cases
 				if not merge.valid(): continue
 				# Find the next event, either merge or join
