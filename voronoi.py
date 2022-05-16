@@ -191,7 +191,7 @@ class wave:
 		elif left or right:
 			return self.interInit0xN(p1, p2, c1, c2, f1, f2)
 		else:
-			return self.interInitNxN(p1, p2, c1, c2, f1, f2)
+			raise Exception("NxN intersections not needed")
 
 	# Base degenerate case of two undirected wavefronts
 	# The intersection plane is 1D
@@ -246,18 +246,26 @@ class wave:
 		print(f1.X,f2.X)
 		print(orthP.X(),orthP.basis,orthP.vec)
 		Ip = lambda T: project(orthP.basis,[I(T)])[0]
+		Ipr = lambda T: project(orthP.basis,[Ir(T)])[0]
 		H = lambda T: reject([I(T)],[orthP.X()])[0]
-		P = lambda T: subspace([I(T),H(T)])
+		Hr = lambda T: reject([Ir(T)],[orthP.X()])[0]
+		P1 = lambda T: subspace([I(T),H(T)])
+		P2 = lambda T: subspace([Ir(T),Hr(T)])
+		P = P1
 		# Calculate projections
-		x1 = lambda T: norm(project(P(T).basis,[f1.X])[0])
-		x2 = lambda T: norm(project(P(T).basis,[f2.X])[0])
+		x1 = lambda T: norm(project(P1(T).basis,[f1.X])[0])
+		x2 = lambda T: norm(project(P2(T).basis,[f2.X])[0])
 		d1, d2 = None, None
 		# Calculate Centerlines to make a clean POI
 		# TODO: move subspace calculations away from lambdas?
 		# TODO: potential bug here with negatives? Not sure.
 		# TODO: clean up angle code by using rejections instead
-		p1v = lambda T: norm(reject([x1(T)], [I(T)])[0])
-		p2v = lambda T: norm(reject([x2(T)], [Ir(T)])[0])
+		#p1v = lambda T: norm(reject([x1(T)], [I(T)])[0])
+		#p2v = lambda T: norm(reject([x2(T)], [Ir(T)])[0])
+		p1vec = lambda T: reject([x1(T)], P1(T).basis)
+		p1v = lambda T: vsum(p1vec(T)[0],p1vec(T)[1])
+		p2vec = lambda T: reject([x2(T)], P2(T).basis)
+		p2v = lambda T: vsum(p2vec(T)[0],p2vec(T)[1])
 		Pclean = lambda T: subspace([p1v(T),p2v(T)])
 		# Calculate raw angles (exterior or interior)
 		t1a = lambda T: angle(x1(T), I(T))
@@ -278,16 +286,19 @@ class wave:
 		# Return the setup information
 		self.x1 = lambda T: x1(T)
 		self.x2 = lambda T: x2(T)
-		self.v1 = lambda T: P(T).basis[0]
-		self.v2 = lambda T: P(T).basis[1]
+		self.v1 = lambda T: P1(T).basis[0]
+		self.v2 = lambda T: P1(T).basis[1]
 		self.t1a = t1a
 		self.t2a = t2a
 		self.t1 = t1
 		self.t2 = t2
 		self.Ip = Ip
 		self.H = H
+		self.Hr = Hr
 		self.p1v = p1v
 		self.p2v = p2v
+		self.p1vec = p1vec
+		self.p2vec = p2vec
 		return Pl, Th, I, (d1, d2), C2L
 
 	def spanInit(self):
@@ -318,40 +329,23 @@ class wave:
 		# Project waves onto the intersection subspace
 		r1p = projectPOI(p1.R, self.D[0])
 		r2p = projectPOI(p2.R, self.D[1])
-		# Solve the quadratic (or linear) equation for two spheres
+		# Linear equation for two spheres
 		I = lambda t: magnitude(self.I(t))
-		solution = []
-		# Linear equation (0x0, 0xN)
-		if self.C2L == None:
-			f0 = lambda t: 2.0 * I(t)
-			f1 = lambda t: r2p(t)**2.0 - I(t)**2.0 - r1p(t)**2.0
-			solution = [linear(f0,f1)]
-		# Quadratic equation (NxN)
-		else:
-			cos = lambda t: math.cos(t)
-			c2l = lambda x, t: self.C2L[x](t)
-			f0 = lambda t: 2.0 * (1.0 - cos(theta(t)) * c2l(1,t))
-			f1 = lambda t: -2.0 * cos(theta(t)) * c2l(0,t)
-			f2 = lambda t: r2p(t)**2.0 - I(t)**2.0 - r1p(t)**2.0
-			n, p = quadratic(f0, f1, f2)
-			# Use the solution that matches I
-			sign = lambda t: dot(self.I(t),self.P(t)[0])
-			signed = lambda t: n(t) if sign(t) < 0.0 else p(t)
-			solution = [signed]
-		sol = sorted([s(T) for s in solution])
-		return sol
+		f0 = lambda t: 2.0 * I(t)
+		f1 = lambda t: r2p(t)**2.0 - I(t)**2.0 - r1p(t)**2.0
+		return linear(f0,f1)(T)
 
 	# The current location of the wave center
 	def L(self, T, clamp = True):
 		d = None if self.D[0] == None else self.D[0](T)
-		C = scale(self.P(T)[0], self.C(T, clamp)[0])
+		C = scale(self.P(T)[0], self.C(T, clamp))
 		ret = vsum(self.p1.L(T, clamp), vsum(d, C))
 		return ret
 
 	# The radius perpendicular to the form at time T
 	def R(self, T):
 		# Find projected C and R
-		Cs = self.C(T)[0]
+		Cs = self.C(T)
 		Rp = projectPOI(self.parents()[0].R,self.D[0])(T)
 		# Find radius
 		radius = abs((Rp ** 2.0) - (Cs ** 2.0)) ** 0.5
@@ -664,6 +658,7 @@ class wavefront:
 		self.weight = weights
 		self.alias = {}
 		self.dim = None
+		self.base = []
 		self.wave = []
 		self.ended = []
 		self.debug = []
@@ -713,6 +708,7 @@ class wavefront:
 		if wave.leaf():
 			wid = tuple([self.nextID])
 			self.nextID += 1
+			self.base.append(wave)
 		else:
 			wid = waveID(self, wave)
 		self.ids[wave] = tuple(wid)
@@ -788,16 +784,13 @@ class wavefront:
 		# Cache to prevent symmetric overlapp
 		overcache = []
 		# Check for wave mergings
-		for w1 in self.wave:
+		for w1 in self.base:
 			for w2 in self.wave:
 				# ID candidates to prevent overlapp.
 				wid = waveID2(self, w1, w2)
 				if waveIDIN(overcache, wid): continue
 				if waveIDIN(self.widList(), wid): continue
-				# TODO: remove
-				if not len(wid) == 4:
-					overcache.append(wid)
-				# TODO: debug remove
+				overcache.append(wid)
 				# Wave siblings have already intersected
 				if waveSibling(self, w1, w2): continue
 				# Waves need to span space to intersect
@@ -817,63 +810,8 @@ class wavefront:
 				# Waves that barely span space make a vertex
 				# So just store it and we gucci
 				if w1.N() + w2.N() == self.dim - 1:
-					if not (w1.N() == 1 and w2.N() == 1):
-						continue
-					# Store the vertex so it is not re-calculated
-					self.addVertex(merge)
-					# TODO: Vertex intersections!
-					print("POTVRT:", w1.N(), w2.N())
-					print("WIDS",self.ids[w1],self.ids[w2])
-					m = merge
-					if m.valid():
-						print("WAVE DIMS", w1.N(), w2.N(), m.N())
-					
-					inf, sup = m.span
-					p1,p2 = m.parents()
-					r1p = projectPOI(p1.R, m.D[0])
-					r2p = projectPOI(p2.R, m.D[1])
-					theta = m.theta
-					cos = math.cos
-					print("Span inf sup", inf, sup)
-					print("D", m.D)
-					if not inf == None:
-						print("Th:",m.theta(inf))
-						print("t1:",m.t1(inf))
-						print("t2:",m.t2(inf))
-						print("t1a:",m.t1a(inf))
-						print("t2a:",m.t2a(inf))
-					if not m.valid():
-						print("INVALID!")
-					else:
-						print("VRT:",m,m.span)
-					print(waveID(self,p1), waveID(self,p2))
-					# Add debug vectors to parent(s)
-					# TODO: SIGH this is still borked >->
-					s = m.span
-					s1 = p1.span
-					s2 = p2.span
-					sh = lambda t: scale(hat(3,0),0.01)
-					c1 = lambda t: p1.L(t)
-					c2 = lambda t: p2.L(t)
-					l1 = lambda t: vec(c1(t),c2(t))
-					l2 = lambda t: vec(c2(t),c1(t))
-					cD = lambda t: m.L(t)
-					cL1 = lambda t: scale(m.p1v(t), 5.0)
-					cL2 = lambda t: scale(m.p2v(t), 5.0)
-					x1 = m.x1
-					x2 = m.x2
-					self.debug = []
-					self.debug.append(debugvec(s1,(c1,sh)))
-					self.debug.append(debugvec(s2,(c2,sh)))
-					# I debug
-					self.debug.append(debugvec(s,(c1,m.I)))
-					self.debug.append(debugvec(s,(c1,m.Ip)))
-					# Pv debug
-					self.debug.append(debugvec(s1,(c1,cL1)))
-					self.debug.append(debugvec(s2,(c2,cL2)))
-					# C debug
-					self.debug.append(debugvec(s,(cD,sh)))
-					self.debug.append(debugvec(s,(cD,m.H)))
+					#self.addVertex(merge)
+					print("VERTEX CODE HERE!")
 					continue
 				# An invalid merge only happens in rare cases
 				if not merge.valid(): continue
