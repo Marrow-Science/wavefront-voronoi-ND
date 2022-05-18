@@ -1,9 +1,3 @@
-# WARNING
-
-The algorithm implementation is not yet finished,
-and will currently produce no output.
-This warning will be removed when a stable implementation is complete.
-
 # wavefront-voronoi-ND
 
 This is an extension of work on wavefront voronoi in 2D space as exemplified in
@@ -91,9 +85,16 @@ For example:
 The library functions "readbinI" and "readbinO" reads binary input and output
 files into internal ```wavefront``` and ```partition``` objects.
 
+Binary formats are not yet implemented.
+
+# WARNING
+
+The algorithm implementation is not yet thouroughly tested, although it does produce correct output
+in many cases.
+
 # Future work
 
-Stay tuned for an MPI implementation and further algorithm optimizations.
+Stay tuned for an MPI implementation, more testing, and further algorithm optimizations.
 
 # Love you!
 I hope you like it!
