@@ -91,6 +91,42 @@ def readHumanReadable(fileI):
 	return read
 
 def writeHumanReadable(fileO, result):
+	print("HUMAN READABLE OUTPUT")
+	for base in result.base:
+		wid = "!" + str(base[0])
+		cen = "["
+		center = result.baseCenter(base)
+		for c in range(len(center)-1):
+			cen += str(center[c]) + " "
+		cen += str(center[-1]) + "]"
+		weight = result.baseWeight(base)
+		wei = "" if weight == 1.0 else " w="+str(weight)
+		line = wid + " " + cen + wei + "\n"
+		fileO.write(line)
+	for vrt in result.vertex:
+		wid = "!"
+		for i in vrt.vid: wid += str(i)
+		vertex = ""
+		for c in vrt.vertex: vertex += str(c) + " "
+		parent = "["
+		for p in range(len(vrt.parent)-1): parent += str(vrt.parent[p]) + " "
+		parent += str(vrt.parent[-1]) + "]"
+		center = ""
+		if not vrt.center == None:
+			cen = vrt.center
+			center += "c=("
+			for c in range(len(cen)-1): center += str(cen[c]) + " "
+			center += str(vrt.center[-1])+")"
+		form = ""
+		if not vrt.space == None:
+			form += "f=["
+			for f in vrt.space.basis:
+				form += "["
+				for c in range(len(f)-1): form += str(f[c]) + " "
+				form += str(f[-1]) + "]"
+			form += "]"
+		print(wid, vertex, parent, center, form)
+		
 	pass
 
 def readBinary(fileI):

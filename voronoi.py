@@ -33,7 +33,11 @@ def runWevoNd(wavefront, eps = EPS):
 		eventHandler(event)
 		event, eventHandler = wavefront.nextEvent(eps = eps)
 	verticies = wavefront.getVerticies()
-	return partition(verticies)
+	base = {}
+	for b in wavefront.base:
+		wid = wavefront.ids[b]
+		base[wid] = b
+	return partition(base, verticies)
 
 # Debug printing statements
 def waveTreePrint(WF, wave,idx):
@@ -280,18 +284,40 @@ class wave:
 
 # A vertex of a cell, computed by either wave cessation or intersection
 # The set of all vertexes can be used to quickly reconstruct full cells
+def waveVertexThunk(WF, wav, eps = EPS):
+	# All vertexes have points ids and parents
+	vid = WF.ids[wav]
+	pt = wav.center[0]
+	parents = waveID(WF, wav)
+	# Some vertexes are just points in space
+	if wav.N() == -1: return vertex(vid, pt, None, parents, None)
+	# All others have parents and forms
+	space = wav.form.space
+	# Some vertexes are flat (either by stuff or things)
+	if wav.center[1] == None: return vertex(vid, pt, None, parents, space)
+	# If spans are too small flatten the vertex? TODO: is this the right location?
+	span = magnitude(vec(wav.center[0],wav.center[1]))
+	if span < eps: return vertex(vid, pt, None, parents, space)
+	# Others are curved
+	center = scale(vsum(wav.center[0],wav.center[1]), 0.5)
+	return vertex(vid, pt, center, parents, space)
+
 class vertex:
-	def __init__(self, vertex, center, parents):
+	def __init__(self, vid, vertex, center, parents, space):
+		self.vid = vid
 		self.vertex = vertex
 		self.center = center
 		self.parent = parents
+		self.space = space
 
 # The voronoi partition is composed of all vertexes and their relationships
 class partition:
 	# The core part of the partition is a set of vertexes
-	def __init__(self, verticies, **kwargs):
+	def __init__(self, base, vertex, **kwargs):
 		# Limit the number of intersection combinations we can cache
 		self.intercachelimit = kwargDef("intercachelimit", kwargs, 100)
+		# Base ID map
+		self.base = base
 		# Map for easy vertex relationships
 		self.intermap = {}
 		self.intermap[1] = {}
@@ -300,8 +326,13 @@ class partition:
 		self.cellmap = self.intermap[1]
 		self.facemap = self.intermap[2]
 		# Add all the verticies
-		for vrt in verticies: self.addVertex(vrt)
-			
+		self.vertex = []
+		for vrt in vertex: self.addVertex(vrt)
+	# Methods to extract base wave information
+	def baseIDs(self): return [b for b in self.base]
+	def baseCenter(self, wid): return self.base[wid].center[0]		
+	def baseWeight(self, wid): return self.base[wid].weight
+
 	# Cache cells and faces
 	def addVertex(self, vertex):
 		self.vertex.append(vertex)
@@ -520,11 +551,12 @@ def waveCousin(WF, parent, w1, w2):
 	return sub1 and sub2
 
 # TODO: efficiency
-def interiorCandidates(WF, w1, w2):
+def interiorCandidates(WF, wav):
+	w1, w2 = wav.parents()
 	wid1, wid2 = waveID(WF, w1), waveID(WF, w2)
 	neg1 = []
 	neg2 = []
-	for wid in WF.ids.values():
+	for wid in [WF.ids[x] for x in WF.wave]:
 		ch1, rem1 = negWID(wid1, wid)
 		ch2, rem2 = negWID(wid2, wid)
 		# Interiors are always relative to a single base wave
@@ -542,11 +574,12 @@ class debugvec:
 		self.vec = vec
 
 # Identify a wave uniquely in the wavefront
-def waveID(WF, wave):
-	if wave == None: return [-1]
-	if wave in WF.ids.keys(): return WF.ids[wave]
-	if wave.leaf(): return [-1]
-	return tuple(sorted(waveID(WF,wave.p1) + waveID(WF,wave.p2)))
+def waveID(WF, wav):
+	if wav == None: return [-1]
+	if wav in WF.ids.keys(): return WF.ids[wav]
+	if wav.leaf(): return [-1]
+	p1, p2 = wav.parents()
+	return tuple(sorted(waveID(WF,p1) + waveID(WF,p2)))
 
 def waveID2(WF, w1, w2):
 	ret = [w for w in waveID(WF,w1)]
@@ -579,13 +612,13 @@ class wavefront:
 		self.base = []
 		self.wave = []
 		self.ended = []
-		self.debug = []
 		# Keep track of wave IDs for debug and readability purposes
+		self.debug = []
 		self.ids = {}
 		self.rev = {}
 		self.nextID = 0
 		# There are no start verticies
-		self.verticies = []
+		self.vertex = []
 		# Keep track of interior / exterior crossovers
 		self.breakout = {}
 		self.breakin = {}
@@ -607,97 +640,137 @@ class wavefront:
 			# Add the wave
 			self.addWave(baseWave(point,weight,self.dim),alias)
 	def N(self): return self.dim
-	# Add the specified vertex to the wavefront
-	# TODO: encapsulation, verify that it is indeed a vertex?
-	def addVertex(self, vertex):
-		wid = waveID(self, vertex)
-		print("ADDING VERTEX", wid)
-		self.ids[vertex] = tuple(wid)
-		self.rev[tuple(wid)] = vertex
-	# Add the specified wave to the wavefront, return if it was a success
-	# TODO: encapsulation: this needs to guarantee a proper waveform
-	def addWave(self,wave,alias = None):
-		if wave == None: return False
-		if not wave.debug == None:
-			for vec in wave.debug:
-				self.debug.append(debugvec(wave.span,vec))
-		# Waves that barely span space make a vertex
-		# So just store it and we gucci
-		if wave.N() == -1:
-			self.addVertex(wave)
-			return
-		self.wave.append(wave)
-		if not alias == None: self.alias[wave] = alias
+	# Bind a wave ID to a wave
+	def bindID(self, wav, wid):
+		self.ids[wav] = tuple(wid)
+		self.rev[tuple(wid)] = wav
+		return
+
+	# Return the next wid for the given wave
+	def ensureWID(self, wav):
 		wid = None
-		if wave.leaf():
+		if wav.leaf():
 			wid = tuple([self.nextID])
 			self.nextID += 1
-			self.base.append(wave)
 		else:
-			wid = waveID(self, wave)
-		self.ids[wave] = tuple(wid)
-		self.rev[tuple(wid)] = wave
-		# The wave currently has no children and is exterior
-		self.children[wave] = []
-		if not wave in self.breakin: self.breakin[wave] = []
-		if not wave in self.breakout: self.breakout[wave] = []
-		# Calculate which parents this wave is a child of
-		# This includes overlap, while merge operations ignore it
-		# TODO: better efficiency
-		if not wave.leaf():
-			for cand in self.wave:
-				candWID = waveID(self, cand)
-				waveWID = waveID(self, wave)
-				if len(candWID) == len(waveWID): continue
-				if subWID(candWID, waveWID):
-					self.children[cand].append(wave)
+			wid = waveID(self, wav)
+		self.bindID(wav, wid)
+
+	# Ensure that the wave has correct child relations
+	def ensureChildren(self, wav):
+		if not wav in self.children:
+			self.children[wav] = []
+		if wav.leaf(): return
+		for cand in self.wave:
+			if wav in self.children[cand]: continue
+			candWID = waveID(self, cand)
+			waveWID = waveID(self, wav)
+			if len(candWID) == len(waveWID): continue
+			if subWID(candWID, waveWID):
+				self.children[cand].append(wav)
+		return
+
+	# Ensure that the wave has the correct relationships
+	def ensureRelations(self, wav):
+		# Ensure the wave has a WID
+		self.ensureWID(wav)
+		# Ensure the wave has right child relationships
+		self.ensureChildren(wav)
+		# Ensure default breakin and breakout waves
+		if not wav in self.breakin: self.breakin[wav] = []
+		if not wav in self.breakout: self.breakout[wav] = []
+		# Leaf waves have a special cache
+		if wav.leaf(): self.base.append(wav)
+		
+	# Ensure that the given wave has correct breakout behavior
+	def ensureBreakout(self, wav):
+		if wav.leaf(): return
+		# Interior calculations TODO: cache, clean
+		# TODO: move outside of this function
+		if not wav in self.breakout:
+			self.breakout[wav] = []
+		interiorCand = interiorCandidates(self, wav)
+		for interior in interiorCand:
+			# Store breakout wave(s) when confirmed
+			if self.checkInterior(wav, interior):
+				print("CHECKED")
+				out = self.rev[interior]
+				BW = wave(wav, out, self.dim)
+				self.breakout[wav].append(BW)
+	# Add the specified vertex to the wavefront
+	def addVertex(self, vert):
+		self.ensureWID(vert)
+		self.ensureChildren(vert)
+		wid = waveID(self, vert)
+		print("ADDING VERTEX", wid)
+		self.vertex.append(waveVertexThunk(self, vert))
+	# Add the specified wave to the wavefront, return if it was a success
+	# TODO: encapsulation: this needs to guarantee a proper waveform
+	def addWave(self,wav,alias = None):
+		if wav == None: return False
+		# Debug vectors
+		if not wav.debug == None:
+			for vec in wav.debug:
+				self.debug.append(debugvec(wav.span,vec))
+		# Store alias if needed
+		if not alias == None: self.alias[wav] = alias
+		# Waves that barely span space have special relationships
+		if wav.N() == -1: return self.addVertex(wav)
+		# Otherwise the wave has standard relationships
+		self.ensureRelations(wav)
+		self.wave.append(wav)
 		return True
 	# TODO: encapsulation to assure good waveform
-	def endWave(self, wave):
+	def endWave(self, wav):
 		# Base waves do not end
-		if wave.leaf(): raise Exception("Tried to end a base wave")
-		self.ended.append(wave)
+		if wav.leaf(): raise Exception("Tried to end a base wave")
+		self.ended.append(wav)
 		# Store the wave vertex associated with the end
-		self.addVertex(wave)
+		self.addVertex(wav)
 		# If this is a 1-form mark the smaller wave as interior
-		p1, p2 = wave.parents()
+		p1, p2 = wav.parents()
 		if p1.leaf() and p2.leaf():
 			if p1.weight > p2.weight:
-				self.breakin[p2].append(wave)
+				self.breakin[p2].append(wav)
 			else:
-				self.breakin[p1].append(wave)
+				self.breakin[p1].append(wav)
 			return
 		# Remove the wave from parents' children and mark lonelies
 		lonely = []
 		for cand in self.wave:
-			if wave in self.children[cand]:
-				self.children[cand].remove(wave)
+			if wav in self.children[cand]:
+				self.children[cand].remove(wav)
 				if len(self.children[cand]) == 0:
 					lonely.append(cand)
 		# If parents are loney, mark them as breakin if needed
 		for loner in lonely:
 			if len(self.breakout[loner]) > 0: continue
-			self.breakin[loner].append(wave)
+			self.breakin[loner].append(wav)
 		
 	def widList(self): return [x for x in self.ids.values()]
 	def popWave(self): self.wave.pop()
 	# Return all waves active at t = T
 	def cut(self, T):
 		ret = []
-		for wave in self.wave:
-			s = wave.span
+		for wav in self.wave:
+			s = wav.span
 			if T > s[0] and (s[1] == None or T < s[1]):
-				ret.append(wave)
+				ret.append(wav)
 		return ret
-	# Return all verticies in the currenet wavefront
+	# Return all verticies in the currenet wavefront, including remnants
 	def getVerticies(self):
-		return self.verticies
+		remnants = []
+		for wav in self.wave:
+			if wav.leaf(): continue
+			if wav in self.ended: continue
+			remnants.append(waveVertexThunk(self, wav))
+		return self.vertex + remnants
 	# Calculate if a wave is interior to another
-	def checkInterior(self, wave, interiorID):
+	def checkInterior(self, wav, interiorID):
 		# Just get the wave center and compare it to the wid
-		start = wave.span[0]
+		start = wav.span[0]
 		interWave = self.rev[interiorID]
-		disvec = vec(wave.center[0], interWave.L(start))
+		disvec = vec(wav.center[0], interWave.L(start))
 		dismag = magnitude(disvec)
 		# The wave is interior if the center lies within the outer wave
 		return dismag < interWave.R(start)
@@ -723,16 +796,8 @@ class wavefront:
 				if w1.N() + w2.N() < self.dim - 1: continue
 				# Perform wave merge calculations
 				merge = wave(w1, w2, self.dim)
-				# Interior calculations TODO: cache, clean
-				# TODO: move outside of this function
-				self.breakout[merge] = []
-				interiorCand = interiorCandidates(self, w1, w2)
-				for interior in interiorCand:
-					# Store breakout wave(s) when confirmed
-					if self.checkInterior(merge, interior):
-						out = self.rev[interior]
-						BW = wave(merge, out, self.dim)
-						self.breakout[merge].append(BW)
+				# Perform breakout calculations
+				self.ensureBreakout(merge)
 				# An invalid merge only happens in rare cases
 				if not merge.valid(): continue
 				# Find the next event, either merge or join
