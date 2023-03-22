@@ -6,6 +6,8 @@ from scipy.optimize import brentq as solve
 from numpy.polynomial import Polynomial as poly
 # For pairs of points
 from itertools import combinations
+# To exit cleanly
+import sys
 
 # We create a weighted Voronoi cell in ND using a wavefront algorithm
 
@@ -605,6 +607,9 @@ def waveIDIN(overcache, wid):
 # TODO: within the current bounds (by finding further verticies) we can do this 
 class wavefront:
 	def __init__(self, points, weights, ids={}):
+		# Metadata for debug
+		self.debugMD = False
+		# Base data
 		self.point = points
 		self.weight = weights
 		self.alias = {}
@@ -626,6 +631,7 @@ class wavefront:
 		self.children = {}
 		# Add the base waves from input data
 		self.start(ids)
+	def setDebug(self,flag = True): self.debugMD = flag
 	def start(self,ids={}):
 		self.wave = []
 		num = 0
@@ -693,7 +699,7 @@ class wavefront:
 		for interior in interiorCand:
 			# Store breakout wave(s) when confirmed
 			if self.checkInterior(wav, interior):
-				print("CHECKED")
+				if(self.debugMD): print("CHECKED")
 				out = self.rev[interior]
 				BW = wave(wav, out, self.dim)
 				self.breakout[wav].append(BW)
@@ -702,7 +708,7 @@ class wavefront:
 		self.ensureWID(vert)
 		self.ensureChildren(vert)
 		wid = waveID(self, vert)
-		print("ADDING VERTEX", wid)
+		if(self.debugMD): print("ADDING VERTEX", wid)
 		self.vertex.append(waveVertexThunk(self, vert))
 	# Add the specified wave to the wavefront, return if it was a success
 	# TODO: encapsulation: this needs to guarantee a proper waveform
@@ -823,8 +829,9 @@ class wavefront:
 	def nextEvent(self, eps = EPS):
 		waveEnd, eT = self.nextWaveEnd(eps)
 		waveMerge, mT = self.nextWaveMerge(eps)
-		#print("END CANDIDATE", eT, waveID(self, waveEnd))
-		#print("MERGE CANDIDATE", mT, waveID(self, waveMerge))
+		if(self.debugMD):
+			print("END CANDIDATE", eT, waveID(self, waveEnd))
+			print("MERGE CANDIDATE", mT, waveID(self,waveMerge))
 		# Events are just a wave and what to do (add or remove)
 		endEvent = (waveEnd, lambda x: self.endWave(x))
 		mergeEvent = (waveMerge, lambda x: self.addWave(x))
@@ -923,18 +930,16 @@ if __name__ == "__main__":
 	points = [[1.0,1.0],[1.0,0.5],[0.5,1.0]]
 	weights = [1.0,2.0,3.0]
 
-	#Initalize the wavefront
+	#Initalize the wavefront, set debug mode
 	WF = wavefront(points, weights)
+	WF.setDebug()
 
 	#Initialize the waves
 	wav = []
 	for point, weight in zip(points, weights):
 		wav.append(baseWave(point, weight,len(points[0])))
 
-	# Sort intersections by temporal order
-	# Advance time to the next step, clean the wavefront by removing
-	# unused waves, then repeat until done
-	# All steps are parallelizable
-
-	collision = WF.nextCollision()
-	print(collision.span, collision.center)
+	# Run the Algorithm
+	partition = runWevoNd(WF,0.001)
+	# Return success
+	sys.exit(0)

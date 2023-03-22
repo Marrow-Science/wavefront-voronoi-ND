@@ -8,12 +8,13 @@ applications such as materials science and machine learning.
 
 # Dependencies
 
-The basic algorithm runs purely on python standard libraries.
+The basic algorithm runs on ```scipy```.
 The visualization code ```vis.py``` depends on the ```Panda3d``` library
 for 3d rendering (https://www.panda3d.org).
-Install this dependency using ```pip```:
+Install these dependencies using ```pip```:
 
 ```pip install panda3d```
+```pip install scipy```
 
 # Running
 
@@ -32,6 +33,8 @@ Execute by using python3.
 -b, --binary	use binary input/output encodings
 
 -v, --vis	run a panda3d visualization of the algorithm
+
+-d, --debug	print debug output
 
 -h, --help	display a help message
 

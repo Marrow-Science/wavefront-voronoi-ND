@@ -1,0 +1,1 @@
+notify-output pandalog.txt

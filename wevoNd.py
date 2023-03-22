@@ -26,6 +26,10 @@ def createArgumentParser():
 		nargs='?',
 		type=argparse.FileType('w'),
 		default=sys.stdout)
+	parser.add_argument(
+		"-d", "--debug",
+		action='store_true',
+		help="print extra debug information")
 	return parser
 
 class humanInput:
@@ -67,6 +71,12 @@ class humanOutput:
 	def writeToFile(self, fileO):
 		pass
 
+def ssv(values):
+	line = ""
+	for x in values[:-1]: line += x + " "
+	line += values[-1] + "\n"
+	return line
+
 def parse(parser, args):
 	try: return parser.parse_args(args)
 	except: sys.exit(2)
@@ -91,7 +101,6 @@ def readHumanReadable(fileI):
 	return read
 
 def writeHumanReadable(fileO, result):
-	print("HUMAN READABLE OUTPUT")
 	for base in result.base:
 		wid = "!" + str(base[0])
 		cen = "["
@@ -102,31 +111,33 @@ def writeHumanReadable(fileO, result):
 		weight = result.baseWeight(base)
 		wei = "" if weight == 1.0 else " w="+str(weight)
 		line = wid + " " + cen + wei + "\n"
-		fileO.write(line)
+		fileO.write(ssv([wid,cen,wei]))
 	for vrt in result.vertex:
 		wid = "!"
 		for i in vrt.vid: wid += str(i)
 		vertex = ""
 		for c in vrt.vertex: vertex += str(c) + " "
 		parent = "["
-		for p in range(len(vrt.parent)-1): parent += str(vrt.parent[p]) + " "
+		for p in range(len(vrt.parent)-1):
+			parent += str(vrt.parent[p]) + " "
 		parent += str(vrt.parent[-1]) + "]"
 		center = ""
 		if not vrt.center == None:
 			cen = vrt.center
 			center += "c=("
-			for c in range(len(cen)-1): center += str(cen[c]) + " "
+			for c in range(len(cen)-1):
+				center += str(cen[c]) + " "
 			center += str(vrt.center[-1])+")"
 		form = ""
 		if not vrt.space == None:
 			form += "f=["
 			for f in vrt.space.basis:
 				form += "["
-				for c in range(len(f)-1): form += str(f[c]) + " "
+				for c in range(len(f)-1):
+					form += str(f[c]) + " "
 				form += str(f[-1]) + "]"
 			form += "]"
-		print(wid, vertex, parent, center, form)
-		
+		fileO.write(ssv([wid,vertex,parent,center,form]))
 	pass
 
 def readBinary(fileI):
@@ -152,6 +163,7 @@ def main(argv):
 	readinput = readInput(parsed.input,parsed.binary)
 	# Pass the input to the wavefront algorithm
 	wavefront = wavefrontSetup(readinput)
+	if parsed.debug: wavefront.setDebug()
 	# Run the algorithm
 	partition = voronoi.runWevoNd(wavefront)
 	# Do visualization if wanted

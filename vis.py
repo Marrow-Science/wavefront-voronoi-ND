@@ -9,6 +9,7 @@ from panda3d.core import GeomTriangles
 from panda3d.core import Geom, GeomNode, ModelNode
 from panda3d.core import TransparencyAttrib
 from panda3d.core import Vec3, Quat
+from panda3d.core import loadPrcFile
 from direct.gui.DirectGui import DirectSlider
 
 # The "default" runtime system
@@ -226,6 +227,7 @@ def createVectorGeometry(tag = 'def'):
 
 class VoronoiVis(ShowBase):
 	def __init__(self, WF):
+		loadPrcFile("pandaconfig.prc")
 		ShowBase.__init__(self)
 		# Store the wavefront here
 		self.wavefront = WF
@@ -567,6 +569,7 @@ if __name__ == "__main__":
 
 
 	WF = voronoi.wavefront(data, weight, ids)
+	WF.setDebug()
 	voronoi.runWevoNd(WF)
 	root = VoronoiVis(WF)
 	root.setTime(0.5)
