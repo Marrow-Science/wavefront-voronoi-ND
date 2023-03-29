@@ -1,0 +1,2 @@
+OMP_NUM_THREADS=2
+--report-bindings -np 120 --use-hwthread-cpus --map-by ppr:10:node:pe=2 -x OMP_NUM_THREADS voronoi

@@ -90,6 +90,42 @@ files into internal ```wavefront``` and ```partition``` objects.
 
 Binary formats are not yet implemented.
 
+# MPI Code NOT YET IMPLEMENTED
+
+The MPI Code is currently being developed and tested.
+It depends on the OpenMPI c++ compiler
+and the Sandia National Laboratories Map Reduce MPI ```MR-MPI``` code.
+There is a provided make script for checking and installing these dependencies.
+
+```make configure```
+
+Compile the library object files using make.
+By default they will be placed in the build/ directory
+
+```make```
+
+This package provides a few examples for using the mpi code.
+They depend on the wevoNd library files. Compile them using Make.
+
+```make examples```
+
+It is recommened to run the included mpi examples using ```slurm```
+
+```sudo apt-get install slurmctld```
+```sudo apt-get install slurmd```
+
+Slurm needs detailed setup, see https://slurm.schedmd.com/quickstart_admin.html
+
+After the detailed setup, run the examples using slurm.
+
+```srun voronoi-test```
+
+Or use the provided MPI runtime directly.
+The MPI runtime is identical to the python runtime with a few restrictions.
+It must read from files, not stdin, and must write to files, not stdout.
+
+```srun wevoNd -i <input_file> -o <output_file>```
+
 # WARNING
 
 The algorithm implementation is not yet thouroughly tested, although it does produce correct output
