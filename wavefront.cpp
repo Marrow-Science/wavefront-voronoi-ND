@@ -13,52 +13,12 @@ using namespace MAPREDUCE_NS;
 // C imports
 #include <stdio.h>
 
-// Use the Interpolate, Truncate, Project algorithm to solve the given function
-// on the given interval. Is not safe, will not do checks
+// Voronoi imports
+#include "itpsolv.h"
+using namespace itp;
 
-typedef struct {
-	double lower, upper, eps;
-} SOLVEBOUND;
 
-const double k1 = 0.1;
-const double k2 = 2.56567330897; // (0.98*(phi+1)), adjusted as per the paper
-
-double ITPsolv(double(*function)(double),SOLVEBOUND inbound, double eps)
-{
-	double window = inbound.upper - inbound.lower;
-	double nbisection = std::log2(window/(2.0*eps));
-	double nmax = nbisection + 1.0; // n0 is one, based on prev work
-	int iteration = 0;
-	SOLVEBOUND bound = inbound;
-	while(bound.upper - bound.lower > 2*eps)
-	{
-		// Interpolation: bisection and regula falsi points
-		double fa = function(bound.lower);
-		double fb = function(bound.upper);
-		double bisection = (bound.lower + bound.upper) / 2;
-		double regulafalsi = (bound.upper*fa - bound.lower*fb)/(fa-fb);
-		// Truncation, perturb towards center
-		bool alph = std::signbit(bisection - regulafalsi);
-		double d1 = k1*std::pow((bound.upper - bound.lower),k2);
-		double d2 = std::abs(bisection - regulafalsi);
-		double del = d1 < d2 ? d1 : d2;
-		double xt = alph ? regulafalsi + del : regulafalsi - del;
-		// Projection, project the estimator to new minmax interval
-		double win = (bound.upper - bound.lower);
-		double pr = eps*std::pow(2.0,nmax - iteration)-(win/2.0);
-		double pf = std::abs(xt - bisection);
-		double proj = pr < pf ? pr : pf;
-		// Find the new bound!
-		double xITP = alph ? bisection - proj : bisection + proj;
-		double yITP = function(xITP);
-		if(yITP > 0) { bound.upper = xITP; }
-		else if(yITP < 0) { bound.lower = xITP; }
-		else { bound.lower = xITP; bound.upper = xITP; }
-		iteration++;
-	}
-	return (bound.upper + bound.lower) / 2.0;
-}
-
+// TODO: remove this code
 double linfunctest(double x) { return 2*x - 12; }
 double quadfunctest(double x) { return x*x - 6*x + 10; }
 double cubfunctest(double x) { return x*x*x + 2*x*x; }
@@ -75,18 +35,25 @@ void testITPsolv(int itask, KeyValue* kv, void* ptr)
 	switch(itask)
 	{
 		case 0:
-		res = ITPsolv(linfunctest,{-20.0,40.0},eps);
+		res = ITPsolvSafe(linfunctest,{false,false,-20.0,40.0},eps);
 		break;
 		case 1:
-		res = ITPsolv(quadfunctest,{-20.0,20.0},eps);
+		res = ITPsolvSafe(quadfunctest,{false,false,-20.0,20.0},eps);
 		break;
 		case 2:
-		res = ITPsolv(cubfunctest,{-20.0,30.0},eps);
+		res = ITPsolvSafe(cubfunctest,{false,false,-20.0,30.0},eps);
 		break;
 		default: break;
 	}
 	printf("Solution: %f\n",res);
 }
+
+// Each wave stores all data needed to calculate wave intersections.
+//class wave
+//{
+
+
+//}
 
 // Initialize all the MPI datatypes, for use in messages
 void bindMPIDatatype(MPI_Datatype** handle)
@@ -106,6 +73,7 @@ void bindMPIDatatype(MPI_Datatype** handle)
 
 int main(int argc, char **argv)
 {
+	try {
 	// Initialize the MPI runtime
 	MPI_Init(&argc,&argv);
 	int initialized;
@@ -117,8 +85,12 @@ int main(int argc, char **argv)
 	bindMPIDatatype(handle);
 	// Execute our ITP code
 	MapReduce *mr = new MapReduce(MPI_COMM_WORLD);
-	uint64_t kvupdate = mr->map(4,&testITPsolv,NULL);
+		uint64_t kvupdate = mr->map(4,&testITPsolv,NULL);
 	delete mr;
 	MPI_Finalize();
+	} catch(itp::BoundError e)
+	{
+		printf("Caught error %s\n",e.what());
+	}
 	return 0;
 }

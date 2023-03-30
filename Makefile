@@ -1,8 +1,14 @@
 INCLUDE=$(realpath lib/MR-MPI/)
 SOURCE=$(wildcard $(realpath obj/Obj_linux/)/*.o)
+OBJ=itpsolv.o
+CC=mpicxx.openmpi 
 
-all:
-	mpicxx.openmpi wavefront.cpp $(SOURCE) -o voronoi -I $(INCLUDE)
+
+itpsolv:
+	$(CC) -c itpsolv.cpp
+
+all: itpsolv
+	$(CC) wavefront.cpp $(SOURCE) $(OBJ) -o voronoi -I $(INCLUDE)
 
 run:
 	srun ./voronoi
