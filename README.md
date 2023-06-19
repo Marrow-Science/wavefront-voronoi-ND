@@ -83,7 +83,7 @@ For example:
 !12 2.0 1.0 3.0 [1 2] c=(2.0 3.0 1.0) f=[[1.0 2.0 3.0] [3.0 2.0 1.0]]
 ```
 
-# Binary file format
+# Binary file format NOT YET IMPLEMENTED
 
 The library functions "readbinI" and "readbinO" reads binary input and output
 files into internal ```wavefront``` and ```partition``` objects.
