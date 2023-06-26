@@ -46,6 +46,17 @@ class Form
 	{
 		dat.resize(dimension*manifold,0.0);
 	}
+	Form(uint32_t dim, std::initializer_list<double> list)
+		: dimension{dim}, manifold{list.size()/dim}
+	{
+		dat.resize(dimension*manifold,0.0);
+		size_t i = 0;
+		for(auto&& x : list)
+		{
+			dat[i] = x;
+			i++;
+		}
+	}
 	double& at(uint32_t i,uint32_t j) { return dat[dimension*i+j]; }
 	const uint32_t space() { return dimension; }
 	const uint32_t dim() { return manifold; }
@@ -54,19 +65,42 @@ class Form
 class Vector
 {
 	private:
-	std::vector<double> dat = std::vector<double>(dimension,0.0);
+	std::vector<double> dat;
 	const uint32_t dimension;
 	public:
-	Vector() : dimension{0} {}
-	Vector(std::initializer_list<double> list) : dimension{uint32_t(list.size())}
+	Vector() : dimension{0}
 	{
-		size_t i = 0;
-		for(auto&& x : list) { dat[i] = x; ++i; }
+		dat.resize(dimension,0.0);
 	}
+	Vector(uint32_t dim) : dimension{dim}
+	{
+		dat.resize(dimension,0.0);
+	}
+	Vector(std::initializer_list<double> list)
+		: dimension{uint32_t(list.size())}
+	{
+		dat.resize(dimension,0.0);
+		size_t i = 0;
+		for(auto&& x : list)
+		{
+			dat[i] = x;
+			i++;
+		}
+	}
+	void operator=(Vector other)
+	{
+		for(uint32_t i = 0; i < dimension; i++)
+		{
+			dat[i] = other.at(i);
+		}
+	}
+	double* loc() { return &dat[0]; }
 	double& at(uint32_t i) { return dat[i]; }
 	const uint32_t space() { return dimension; }
 };
 
+
+// Struct for easy MPI sending
 struct wave {
 	// Main data, need these for a unique wave
 	Vector center[3];
@@ -130,8 +164,10 @@ void testITPsolv(int itask, KeyValue* kv, void* ptr)
 }
 
 struct wave inline initBaseWave(Vector center)
-{
-	wave ret = {{center,{},{}},Form{},{0.0,-1.0,-1.0}};
+{	
+
+	printf("CHECKPOINT1\n");
+	struct wave ret = {{center,{},{}},Form{3},{0.0,-1.0,-1.0}};
 	ret.isflat = true;
 	return ret;
 }
@@ -172,14 +208,36 @@ void inline printWave(struct wave wave)
 	printf("\n");
 }
 
-void testDataSending(int rank, MPI_Datatype** handle)
+void testDataSending(int rank, uint32_t dim, uint32_t man, MPI_Datatype** hand)
 {
 
-	// TODO: actually test the send
-	wave basewave = initBaseWave(Vector{0.0,1.0,2.0,3.0});
+	// Construct the types to send
+	printf("TESTING VEC...");
+	Vector vec = Vector{dim};
+	printf("Pre {%f,%f,%f}\n",vec.at(0),vec.at(1),vec.at(2));
+	if(rank == 0)
+	{
+		for(uint32_t i = 0; i < dim; i++)
+		{
+			vec.loc()[i] = i*2.0 + 0.1*i*i;
+		}
+		MPI_Bcast(vec.loc(),1,*hand[1],0,MPI_COMM_WORLD);
+	}
+	else
+	{
+		MPI_Bcast(vec.loc(),1,*hand[1],0,MPI_COMM_WORLD);
+	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	printf("Post {%f,%f,%f}\n",vec.at(0),vec.at(1),vec.at(2));
+	printf(" TESTED\n");
 
-	printWave(basewave);
+	printf("TESTING FORM... ");
+	Form frm{4,{0.0,1.0,0.0,0.0,1.0,0.0,0.0,0.0}};
+	printf(" TESTED\n");
+	//wave basewave = initBaseWave(Vector{0.0,1.0,2.0,3.0});
 
+	//printWave(basewave);
+	/*
 	printf("Rank is %d\n",rank);
 	SOLVEBOUND msg = {false, false, -10.0*(rank+2), 20.0*(rank+2)};
 	MPI_Status status;
@@ -197,6 +255,7 @@ void testDataSending(int rank, MPI_Datatype** handle)
 		MPI_Barrier(MPI_COMM_WORLD);
 		printf("%d: After msg is %d %d %f %f\n",rank,msg.verified,msg.safe,msg.lower,msg.upper);
 	}
+	*/
 }
 
 // Initialize all the MPI datatypes, for use in messages
@@ -219,10 +278,10 @@ void bindMPIDatatype(MPI_Datatype** handle, uint32_t space, uint32_t manifold)
 	MPI_Type_create_struct(4,solvcount,solvoffset,solvbase,handle[0]);
 	MPI_Type_commit(handle[0]);
 	// Datatype for a vector, single block of space size
-	MPI_Type_vector(1,space,0,MPI_FLOAT,handle[1]);
+	MPI_Type_vector(1,space,0,MPI_DOUBLE,handle[1]);
 	MPI_Type_commit(handle[1]);
 	// Datatype for a geometric form, square block
-	MPI_Type_vector(manifold,space,0,MPI_FLOAT,handle[2]);
+	MPI_Type_vector(manifold,space,0,MPI_DOUBLE,handle[2]);
 	MPI_Type_commit(handle[2]);
 	// The waveform datatype
 	MPI_Datatype wavebase[3] = {
@@ -310,13 +369,11 @@ int main(int argc, char **argv)
 		if(manifoldDimension == -1) {manifoldDimension = dimension; }
 	}
 	
+	MPI_Barrier(MPI_COMM_WORLD);
 	MPI_Bcast(&dimension,1,MPI_UNSIGNED,0,MPI_COMM_WORLD);
 	MPI_Barrier(MPI_COMM_WORLD);
 	MPI_Bcast(&manifoldDimension,1,MPI_UNSIGNED,0,MPI_COMM_WORLD);
 	MPI_Barrier(MPI_COMM_WORLD);
-	printf("Dimensions are: %d,%d\n",dimension,manifoldDimension);
-	MPI_Finalize();
-	return 0;
 
 	MPI_Datatype solvBoundMsg;
 	MPI_Datatype vecMsg;
@@ -328,8 +385,11 @@ int main(int argc, char **argv)
 		&formMsg,
 		&waveMsg
 	};
+
 	wevoND::bindMPIDatatype(handle, dimension, manifoldDimension);
 	
+	wevoND::testDataSending(rank, dimension, manifoldDimension, handle);
+
 	MPI_Finalize();
 	return 0;
 	// Create and broadcast the wavefront
@@ -340,8 +400,6 @@ int main(int argc, char **argv)
 	MapReduce *mr = new MapReduce(MPI_COMM_WORLD);
 	uint64_t kvupdate = mr->map(4,&wevoND::testITPsolv,NULL);
 	delete mr;
-	// Check sending all our structures
-	wevoND::testDataSending(rank, handle);
 	// Finalize everything
 	MPI_Finalize();
 	return 0;
